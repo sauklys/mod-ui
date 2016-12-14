@@ -6773,6 +6773,9 @@ hr.dotted {
 }
 #main-menu #mod-show-midi-port,
 #main-menu .mod-bypass,
+#main-menu #mod-transport-bpm,
+#main-menu #mod-transport-play,
+#main-menu #mod-transport-link,
 #main-menu #mod-cpu,
 #main-menu #mod-ram,
 #main-menu #mod-xruns,
@@ -6792,6 +6795,9 @@ hr.dotted {
 }
 #main-menu #mod-show-midi-port:hover,
 #main-menu .mod-bypass:hover,
+#main-menu #mod-transport-bpm:hover,
+#main-menu #mod-transport-play:hover,
+#main-menu #mod-transport-link:hover,
 #main-menu #mod-cpu:hover,
 #main-menu #mod-ram:hover,
 #main-menu #mod-xruns:hover,
@@ -6800,6 +6806,9 @@ hr.dotted {
 }
 #main-menu #mod-show-midi-port.selected,
 #main-menu .mod-bypass.selected,
+#main-menu #mod-transport-bpm.selected,
+#main-menu #mod-transport-play.selected,
+#main-menu #mod-transport-link.selected,
 #main-menu #mod-cpu.selected,
 #main-menu #mod-ram.selected,
 #main-menu #mod-xruns.selected,
@@ -6808,6 +6817,18 @@ hr.dotted {
 }
 #main-menu #mod-show-midi-port {
   background-image: url(../img/icons/25/midi.png);
+}
+#main-menu #mod-transport-play {
+  background-image: url(../img/icons/25/midi.png);
+}
+#main-menu #mod-transport-play.playing {
+  background-color: #883996;
+}
+#main-menu #mod-transport-link {
+  background-image: url(../img/icons/25/midi.png);
+}
+#main-menu #mod-transport-link.linked {
+  background-color: #883996;
 }
 #main-menu .mod-bypass {
   background-image: url(../img/icons/25/bypass.png);
@@ -6834,6 +6855,18 @@ hr.dotted {
   background-position: 0px 50%;
   background-repeat: no-repeat;
   padding-left: 30px;
+}
+#main-menu #mod-transport-bpm {
+  padding-left: 10px;
+  width: 120px !important;
+}
+#main-menu #mod-transport-bpm span {
+  height: 45px;
+  font-weight: bold;
+}
+#main-menu #mod-transport-bpm .progress-title {
+  padding-left: 30px;
+  font-weight: bold;
 }
 #main-menu #mod-xruns {
   background-image: url(../img/icons/25/cpu.png);
@@ -7007,21 +7040,6 @@ header#pedalboard-actions .sub-menu-trigger:hover ul,
 #pedalboards-library header .sub-menu-trigger:hover ul {
   display: block;
 }
-header#pedalboard-actions #js-transport-bpm,
-#bank-library header #js-transport-bpm,
-#cloud-plugins-library header #js-transport-bpm,
-#pedalboards-library header #js-transport-bpm {
-  bottom: 12px;
-  font-size: 14px;
-  font-weight: bold;
-  left: 38px;
-  color: #fff;
-  text-align: center;
-  right: 38px;
-  padding: 2px;
-  border: 1px solid #000;
-  background: black;
-}
 header#pedalboard-actions button,
 #bank-library header button,
 #cloud-plugins-library header button,
@@ -7076,12 +7094,6 @@ header#pedalboard-actions button#js-preset-enabler.selected,
 #bank-library header button#js-preset-enabler.selected,
 #cloud-plugins-library header button#js-preset-enabler.selected,
 #pedalboards-library header button#js-preset-enabler.selected {
-  background-color: #883996;
-}
-header#pedalboard-actions button#js-transport-play.playing,
-#bank-library header button#js-transport-play.playing,
-#cloud-plugins-library header button#js-transport-play.playing,
-#pedalboards-library header button#js-transport-play.playing {
   background-color: #883996;
 }
 header#pedalboard-actions button.js-reset,

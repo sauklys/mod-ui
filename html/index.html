@@ -107,8 +107,9 @@ $('document').ready(function() {
         presetSaveAsButton: $('#pedalboard-info .js-preset-save-as'),
         presetManageButton: $('#pedalboard-info .js-preset-manage'),
         presetDisableButton: $('#pedalboard-info .js-preset-disable'),
-        transportPlayButton: $('#pedalboard-info #js-transport-play'),
-        transportBPM: $('#pedalboard-info #js-transport-bpm'),
+        transportPlayButton: $('#mod-transport-play'),
+        transportLinkButton: $('#mod-transport-link'),
+        transportBPM: $('#mod-transport-bpm span'),
         effectBox: $('#plugins-library'),
         pedalboardTrigger: $('#main-menu #mod-plugins'),
         cloudPluginBox: $('#cloud-plugins-library'),
@@ -170,6 +171,9 @@ $('document').ready(function() {
     }
     if (PREFERENCES['plugins-folded'] == "true") {
         desktop.effectBox.effectBox('toggle')
+    }
+    if (PREFERENCES['link-enabled'] == "true") {
+        desktop.triggerLinkEnable(true, true)
     }
 
     // start code for ajax loading bar
@@ -424,9 +428,6 @@ $('document').ready(function() {
             <div id="pedalboard-info">
                 <h1 class="top bottom {{titleblend}}">{{fulltitle}}</h1>
                 <div class="actions">
-                    <button id="js-transport-play">Play</button>
-                    <span id="js-transport-bpm" contenteditable="true">120.00</span>
-
                     <button class="js-preset" id="js-preset-enabler">Presets</button>
                     <button class="js-preset menu-trigger mod-hidden" id="js-preset-menu">Presets</button>
                     <ul class="drop-menu clearfix js-pedalboard-presets-menu" style="cursor:pointer;">
@@ -525,6 +526,12 @@ $('document').ready(function() {
         <div id="mod-bypassRight" class="icon mod-bypass">Bypass 2</div>
         <div id="mod-bypassLeft" class="icon mod-bypass">Bypass 1</div>
         <div id="mod-show-midi-port" class="icon">MIDI Ports</div>
+        <div id="mod-transport-bpm" class="icon">
+            <span contenteditable="true">120.00</span>
+            <p class="progress-title" id="ram-bar-text">bpm</p>
+        </div>
+        <div id="mod-transport-play" class="icon">Play</div>
+        <div id="mod-transport-link" class="icon">Link</div>
     </div>
     <!-- END MAIN MENU-->
 

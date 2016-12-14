@@ -344,6 +344,7 @@ hr.dotted {
   }
   #mod-show-midi-port,
   .mod-bypass,
+  #mod-transport-bpm, #mod-transport-play, #mod-transport-link,
   #mod-cpu, #mod-ram, #mod-xruns, #mod-buffersize {
     background-position: 8px 50%;
     background-repeat: no-repeat;
@@ -366,6 +367,18 @@ hr.dotted {
   }
   #mod-show-midi-port {
     background-image: url(../img/icons/25/midi.png);
+  }
+  #mod-transport-play {
+    background-image: url(../img/icons/25/midi.png);
+    &.playing {
+      background-color: @brand-primary;
+    }
+  }
+  #mod-transport-link {
+    background-image: url(../img/icons/25/midi.png);
+    &.linked {
+      background-color: @brand-primary;
+    }
   }
   .mod-bypass {
     background-image: url(../img/icons/25/bypass.png);
@@ -392,6 +405,18 @@ hr.dotted {
     background-position: 0px 50%;
     background-repeat: no-repeat;
     padding-left: 30px;
+  }
+  #mod-transport-bpm {
+    padding-left: 10px;
+    width: 120px !important;
+  }
+  #mod-transport-bpm span {
+    height: 45px;
+    font-weight: bold;
+  }
+  #mod-transport-bpm .progress-title {
+    padding-left: 30px;
+    font-weight: bold;
   }
   #mod-xruns {
     background-image: url(../img/icons/25/cpu.png);
@@ -546,18 +571,6 @@ header#pedalboard-actions,
       display: block;
     }
   }
-  #js-transport-bpm {
-    bottom: 12px;
-    font-size: 14px;
-    font-weight: bold;
-    left: 38px;
-    color: #fff;
-    text-align: center;
-    right: 38px;
-    padding: 2px;
-    border: 1px solid #000;
-    background: black;
-  }
   button {
     background-position: 8px 50%;
     background-size: 25px;
@@ -587,11 +600,6 @@ header#pedalboard-actions,
     &#js-preset-enabler {
         &:hover, &.selected {
             background-color: @brand-primary;
-        }
-    }
-    &#js-transport-play {
-        &.playing {
-          background-color: @brand-primary;
         }
     }
     &.js-reset {

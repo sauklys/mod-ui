@@ -740,6 +740,7 @@ class Host(object):
                 self.transport_rolling = bool(rolling)
                 self.transport_bpm     = bpm
 
+                print("transport %i %f" % (rolling, bpm))
                 self.msg_callback("transport %i %f" % (rolling, bpm))
 
             elif cmd == "data_finish":
@@ -2239,9 +2240,12 @@ _:b%i
     def set_pedalboard_size(self, width, height):
         self.pedalboard_size = [width, height]
 
+    def set_link_enabled(self, enabled):
+        self.send_notmodified("link_enable %i" % int(enabled))
+
     def set_transport(self, rolling, bpm):
-        if self.transport_rolling == rolling and self.transport_bpm == bpm:
-            return
+        #if self.transport_rolling == rolling and self.transport_bpm == bpm:
+            #return
 
         speed = 1.0 if rolling else 0.0
         msg = "transport %i %f" % (int(rolling), bpm)

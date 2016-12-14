@@ -38,6 +38,7 @@ function Desktop(elements) {
         presetManageButton: $('<div>'),
         presetDisableButton: $('<div>'),
         transportPlayButton: $('<div>'),
+        transportLinkButton: $('<div>'),
         transportBPM: $('<div>'),
         effectBox: $('<div>'),
         effectBoxTrigger: $('<div>'),
@@ -775,8 +776,12 @@ function Desktop(elements) {
     })
     elements.transportPlayButton.click(function (e) {
         var rolling = !$(this).hasClass("playing"),
-            bpm = $('#js-transport-bpm').text()
+            bpm = $('#mod-transport-bpm span').text()
         self.triggerTransport(rolling, bpm)
+    })
+    elements.transportLinkButton.click(function (e) {
+        var linked = !$(this).hasClass("linked")
+        self.triggerLinkEnable(linked)
     })
     elements.bypassLeftButton.click(function () {
         self.triggerTrueBypass("Left", !$(this).hasClass("bypassed"))
@@ -1446,6 +1451,15 @@ Desktop.prototype.triggerTransport = function (rolling, bpm) {
     ws.send("transport " + (rolling ? "1" : "0") + " " + bpm)
 }
 
+Desktop.prototype.triggerLinkEnable = function (linked, skipSaveConfig) {
+    ws.send("link_enable " + (linked ? "1" : "0"))
+    $("#mod-transport-link")[(linked ? "add" : "remove") + "Class"]("linked");
+
+    if (! skipSaveConfig) {
+        desktop.saveConfigValue("link-enabled", linked ? "true" : "false")
+    }
+}
+
 Desktop.prototype.triggerTrueBypass = function (channelName, bypassed) {
     var self = this;
     $.ajax({
@@ -1461,8 +1475,8 @@ Desktop.prototype.triggerTrueBypass = function (channelName, bypassed) {
 }
 
 Desktop.prototype.setTransportState = function (playing, bpm) {
-    $("#js-transport-play")[(playing ? "add" : "remove") + "Class"]("playing");
-    $('#js-transport-bpm').text(sprintf("%.2f", bpm))
+    $("#mod-transport-play")[(playing ? "add" : "remove") + "Class"]("playing");
+    $('#mod-transport-bpm span').text(sprintf("%.2f", bpm))
 }
 
 Desktop.prototype.setTrueBypassButton = function (channelName, state) {

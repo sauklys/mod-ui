@@ -625,6 +625,10 @@ class ServerWebSocket(websocket.WebSocketHandler):
             bpm     = float(data[2])
             SESSION.ws_transport_set(rolling, bpm, self)
 
+        elif cmd == "link_enable":
+            on = bool(int(data[1]))
+            SESSION.host.set_link_enabled(on)
+
 class PackageUninstall(JsonRequestHandler):
     @web.asynchronous
     @gen.engine
