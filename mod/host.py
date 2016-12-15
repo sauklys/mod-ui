@@ -46,7 +46,7 @@ from mod.utils import (charPtrToString,
                        init_jack, close_jack, get_jack_data, init_bypass,
                        get_jack_port_alias, get_jack_hardware_ports, has_serial_midi_input_port, has_serial_midi_output_port,
                        connect_jack_ports, disconnect_jack_ports, get_truebypass_value, set_util_callbacks)
-from mod.settings import (APP, DEFAULT_PEDALBOARD, LV2_PEDALBOARDS_DIR,
+from mod.settings import (APP, DEFAULT_PEDALBOARD, LV2_PEDALBOARDS_DIR, PREFERENCES_JSON_FILE,
                           PEDALBOARD_INSTANCE, PEDALBOARD_INSTANCE_ID, PEDALBOARD_URI,
                           TUNER_URI, TUNER_INSTANCE_ID, TUNER_INPUT_PORT, TUNER_MONITOR_PORT)
 from mod.tuner import find_freqnotecents
@@ -156,6 +156,7 @@ class Host(object):
         self.pedalboard_preset   = -1
         self.pedalboard_presets  = []
         self.next_hmi_pedalboard = None
+        self.link_enabled        = False
         self.transport_rolling   = False
         self.transport_bpm       = 120.0
 
@@ -434,6 +435,11 @@ class Host(object):
     def init_host(self):
         self.init_jack()
         self.open_connection_if_needed(None)
+        self.load_prefs()
+
+        data = get_jack_data(True)
+        self.transport_rolling = data['rolling']
+        self.transport_bpm     = data['bpm']
 
         if self.allpedalboards is None:
             self.allpedalboards = get_all_good_pedalboards()
@@ -481,6 +487,12 @@ class Host(object):
 
     def close_jack(self):
         close_jack()
+
+    def load_prefs(self):
+        prefs = safe_json_load(PREFERENCES_JSON_FILE, dict)
+
+        if prefs["link-enabled"] == "true":
+            self.set_link_enabled(True)
 
     def open_connection_if_needed(self, websocket):
         if self.readsock is not None and self.writesock is not None:
@@ -740,7 +752,6 @@ class Host(object):
                 self.transport_rolling = bool(rolling)
                 self.transport_bpm     = bpm
 
-                print("transport %i %f" % (rolling, bpm))
                 self.msg_callback("transport %i %f" % (rolling, bpm))
 
             elif cmd == "data_finish":
@@ -828,7 +839,7 @@ class Host(object):
         if websocket is None:
             return
 
-        data = get_jack_data()
+        data = get_jack_data(False)
         websocket.write_message("mem_load " + self.get_free_memory_value())
         websocket.write_message("stats %0.1f %i" % (data['cpuLoad'], data['xruns']))
         websocket.write_message("transport %i %f" % (int(self.transport_rolling), self.transport_bpm))
@@ -841,6 +852,8 @@ class Host(object):
 
         if crashed:
             self.init_jack()
+            self.load_prefs()
+            self.send_notmodified("transport %i %f" % (int(self.transport_rolling), self.transport_bpm))
 
         midiports = []
         for port_id, port_alias, _ in self.midiports:
@@ -2241,6 +2254,7 @@ _:b%i
         self.pedalboard_size = [width, height]
 
     def set_link_enabled(self, enabled):
+        self.link_enabled = enabled
         self.send_notmodified("link_enable %i" % int(enabled))
 
     def set_transport(self, rolling, bpm):
@@ -2281,7 +2295,7 @@ _:b%i
     # Host stuff - timers
 
     def statstimer_callback(self):
-        data = get_jack_data()
+        data = get_jack_data(False)
         self.msg_callback("stats %0.1f %i" % (data['cpuLoad'], data['xruns']))
 
     def get_free_memory_value(self):

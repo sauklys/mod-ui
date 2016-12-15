@@ -1452,10 +1452,10 @@ Desktop.prototype.triggerTransport = function (rolling, bpm) {
 }
 
 Desktop.prototype.triggerLinkEnable = function (linked, skipSaveConfig) {
-    ws.send("link_enable " + (linked ? "1" : "0"))
     $("#mod-transport-link")[(linked ? "add" : "remove") + "Class"]("linked");
 
     if (! skipSaveConfig) {
+        ws.send("link_enable " + (linked ? "1" : "0"))
         desktop.saveConfigValue("link-enabled", linked ? "true" : "false")
     }
 }
