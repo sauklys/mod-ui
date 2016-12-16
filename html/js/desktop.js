@@ -857,12 +857,12 @@ function Desktop(elements) {
         if (isNaN(value)) {
             value = 120.0
             valuestr = "120.00"
-        } else if (value < 10.0) {
-            value = 10.0;
-            valuestr = "10.00"
-        } else if (value > 250.0) {
-            value = 250.0;
-            valuestr = "250.00"
+        } else if (value < 20.0) {
+            value = 20.0;
+            valuestr = "20.00"
+        } else if (value > 999.0) {
+            value = 999.0;
+            valuestr = "999.00"
         }
         $(this).text(valuestr)
 
