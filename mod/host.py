@@ -491,7 +491,7 @@ class Host(object):
     def load_prefs(self):
         prefs = safe_json_load(PREFERENCES_JSON_FILE, dict)
 
-        if prefs["link-enabled"] == "true":
+        if prefs.get("link-enabled", "") == "true":
             self.set_link_enabled(True)
 
     def open_connection_if_needed(self, websocket):
