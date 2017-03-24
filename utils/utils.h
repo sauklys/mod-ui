@@ -164,7 +164,7 @@ typedef struct {
 
 typedef struct {
     int8_t channel;
-    int8_t control;
+    uint8_t control;
     // ranges added in v1.2, flag needed for old format compatibility
     bool hasRanges;
     float minimum;
@@ -250,8 +250,8 @@ typedef struct {
     double bpm;
 } JackData;
 
-typedef void (*JackMidiPortAppeared)(const char* name, bool isOutput);
-typedef void (*JackMidiPortDeleted)(const char* name);
+typedef void (*JackPortAppeared)(const char* name, bool isOutput);
+typedef void (*JackPortDeleted)(const char* name);
 typedef void (*TrueBypassStateChanged)(bool left, bool right);
 
 // initialize
@@ -345,8 +345,8 @@ MOD_API bool get_truebypass_value(bool right);
 MOD_API bool set_truebypass_value(bool right, bool bypassed);
 
 // callbacks
-MOD_API void set_util_callbacks(JackMidiPortAppeared midiPortAppeared,
-                                JackMidiPortDeleted midiPortDeleted,
+MOD_API void set_util_callbacks(JackPortAppeared portAppeared,
+                                JackPortDeleted portDeleted,
                                 TrueBypassStateChanged trueBypassChanged);
 
 #ifdef __cplusplus

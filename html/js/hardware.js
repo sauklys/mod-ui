@@ -23,7 +23,13 @@ var kMidiLearnURI = "/midi-learn"
 var kMidiUnlearnURI = "/midi-unlearn"
 var kMidiCustomPrefixURI = "/midi-custom_" // to show current one, ignored on save
 
+// use pitchbend as midi cc, with an invalid MIDI controller number
+var MIDI_PITCHBEND_AS_CC = 131
+
 function create_midi_cc_uri (channel, controller) {
+    if (controller == MIDI_PITCHBEND_AS_CC) {
+        return sprintf("%sCh.%d_Pbend", kMidiCustomPrefixURI, channel+1)
+    }
     return sprintf("%sCh.%d_CC#%d", kMidiCustomPrefixURI, channel+1, controller)
 }
 
@@ -306,9 +312,13 @@ function HardwareManager(options) {
                 // We're addressing
                 if (actuator.uri && actuator.uri != kNullAddressURI)
                 {
+                    var actuator_uri = actuator.uri
+                    if (actuator_uri.lastIndexOf(kMidiCustomPrefixURI, 0) === 0) { // startsWith
+                        actuator_uri = kMidiLearnURI
+                    }
                     // add new one, print and error if already there
-                    if (self.addressingsByActuator[actuator.uri].indexOf(instanceAndSymbol) < 0) {
-                        self.addressingsByActuator[actuator.uri].push(instanceAndSymbol)
+                    if (self.addressingsByActuator[actuator_uri].indexOf(instanceAndSymbol) < 0) {
+                        self.addressingsByActuator[actuator_uri].push(instanceAndSymbol)
                     } else {
                         console.log("ERROR HERE, please fix!")
                     }
@@ -334,6 +344,7 @@ function HardwareManager(options) {
                 }
 
                 form.remove()
+                form = null
             })
         }
 
@@ -344,14 +355,7 @@ function HardwareManager(options) {
             if (actuator.uri == null && currentAddressing.uri == null) {
                 console.log("Nothing to do")
                 form.remove()
-                return
-            }
-
-            // if selected actuator is the same and it's a MIDI CC, do nothing.
-            // otherwise we'd have to re-learn
-            if (actuator.uri == currentAddressing.uri && currentAddressing.uri.lastIndexOf(kMidiCustomPrefixURI, 0) === 0) {
-                console.log("Doing nothing")
-                form.remove()
+                form = null
                 return
             }
 
@@ -370,7 +374,7 @@ function HardwareManager(options) {
             }
 
             // if changing from midi-learn, unlearn first
-            if (currentAddressing.uri && (currentAddressing.uri == kMidiLearnURI /*|| currentAddressing.uri.lastIndexOf(kMidiCustomPrefixURI, 0) === 0*/)) {
+            if (currentAddressing.uri == kMidiLearnURI) {
                 var addressing = {
                     uri    : kMidiUnlearnURI,
                     label  : label.val() || pname,
@@ -400,6 +404,7 @@ function HardwareManager(options) {
                     // if not, just close the form
                     } else {
                         form.remove()
+                        form = null
                     }
                 })
             }
@@ -415,13 +420,17 @@ function HardwareManager(options) {
 
         form.find('.js-close').click(function () {
             form.remove()
+            form = null
         })
 
-        form.keydown(function (e) {
-            if (e.keyCode == 27) {
+        $('body').keydown(function (e) {
+            if (e.keyCode == 27 && form && form.is(':visible')) {
                 form.remove()
+                form = null
                 return false
             }
+        })
+        form.keydown(function (e) {
             if (e.keyCode == 13) {
                 saveAddressing()
                 return false
@@ -469,6 +478,37 @@ function HardwareManager(options) {
         options.setEnabled(instance, portSymbol, false)
     }
 
+    this.addActuator = function (actuator) {
+        HARDWARE_PROFILE.push(actuator)
+        self.addressingsByActuator[actuator.uri] = []
+    }
+
+    this.removeActuator = function (actuator_uri) {
+        var addressings = self.addressingsByActuator[actuator_uri]
+
+        for (var i in addressings) {
+            var instanceAndSymbol = addressings[i]
+            var instance          = instanceAndSymbol.substring(0, instanceAndSymbol.lastIndexOf("/"))
+            var portsymbol        = instanceAndSymbol.replace(instance+"/", "")
+
+            delete self.addressingsByPortSymbol[instanceAndSymbol]
+            delete self.addressingsData        [instanceAndSymbol]
+
+            // enable this control
+            options.setEnabled(instance, portsymbol, true)
+        }
+
+        delete self.addressingsByActuator[actuator_uri]
+
+        for (var i in HARDWARE_PROFILE) {
+            var actuator = HARDWARE_PROFILE[i]
+            if (actuator.uri == actuator_uri) {
+                remove_from_array(HARDWARE_PROFILE, actuator)
+                break
+            }
+        }
+    }
+
     // Removes an instance
     this.removeInstance = function (instance) {
         var i, j, index, actuator, instanceAndSymbol, instanceAndSymbols = []
@@ -496,71 +536,15 @@ function HardwareManager(options) {
         }
     }
 
-    /*
-    // Callback from pedalboard.js for when a plugin instance is added
-    this.instanceAdded = function (instance) {
-        if (HARDWARE_PROFILE.addressings) {
-            var addressing, addressings, instanceAndSymbol
-            for (var uri in HARDWARE_PROFILE.addressings) {
-                addressings = HARDWARE_PROFILE.addressings[uri]
-                for (var i in addressings) {
-                    addressing = addressings[i]
-
-                    if (instance != ":all" && addressing.instance != instance)
-                        continue
-
-                    instanceAndSymbol = addressing.instance+"/"+addressing.port
-
-                    if (self.addressingsByActuator[uri].indexOf(instanceAndSymbol) >= 0) {
-                        continue
-                    }
-
-                    self.addressingsByActuator  [uri].push(instanceAndSymbol)
-                    self.addressingsByPortSymbol[instanceAndSymbol] = uri
-                    self.addressingsData        [instanceAndSymbol] = {
-                        uri    : uri,
-                        label  : addressing.label,
-                        minimum: addressing.minimum,
-                        maximum: addressing.maximum,
-                        steps  : addressing.steps,
-                    }
-
-                    // disable this control
-                    options.setEnabled(addressing.instance, addressing.port, false)
-                }
-            }
+    // used only for global pedalboard addressings
+    // don't use it for normal operations, as it skips setEnabled()
+    this.removeHardwareMappping = function (instanceAndSymbol) {
+        var actuator_uri = self.addressingsByPortSymbol[instanceAndSymbol]
+        if (actuator_uri && actuator_uri != kNullAddressURI) {
+            remove_from_array(self.addressingsByActuator[actuator_uri], instanceAndSymbol)
         }
+
+        delete self.addressingsByPortSymbol[instanceAndSymbol]
+        delete self.addressingsData        [instanceAndSymbol]
     }
-
-    this.registerAllAddressings = function () {
-        // save current midi maps
-        var instanceAndSymbol, addressingsData, mappingURI, midiBackup = {}
-        self.addressingsByActuator[kMidiLearnURI]
-        for (var i in self.addressingsByActuator[kMidiLearnURI]) {
-            instanceAndSymbol = self.addressingsByActuator[kMidiLearnURI][i]
-            mappingURI        = self.addressingsByPortSymbol[instanceAndSymbol]
-            midiBackup[mappingURI] = [instanceAndSymbol, self.addressingsData[instanceAndSymbol]]
-        }
-
-        // reset and register all HW
-        self.reset()
-        self.instanceAdded(":all")
-
-        // restore midi maps
-        for (mappingURI in midiBackup) {
-            instanceAndSymbol = midiBackup[mappingURI][0]
-            addressingsData   = midiBackup[mappingURI][1]
-            self.addressingsByActuator  [kMidiLearnURI].push(instanceAndSymbol)
-            self.addressingsByPortSymbol[instanceAndSymbol] = mappingURI
-            self.addressingsData        [instanceAndSymbol] = {
-                uri    : mappingURI,
-                label  : null,
-                minimum: addressingsData.minimum,
-                maximum: addressingsData.maximum,
-                steps  : null,
-            }
-        }
-    }
-    */
-
 }

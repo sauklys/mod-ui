@@ -41,7 +41,10 @@ JqueryClass('cloudPluginBox', {
             },
             upgradePluginURI: function (uri, callback) {
                 callback({}, "")
-            }
+            },
+            info: null,
+            isMainWindow: true,
+            windowName: "Plugin Store"
         }, options)
 
         self.data(options)
@@ -137,7 +140,12 @@ JqueryClass('cloudPluginBox', {
         var self = $(this)
         self.find('.plugins-wrapper').html('')
         self.find('ul.categories li').each(function () {
-            $(this).html($(this).html().split(/\s/)[0])
+            var content = $(this).html().split(/\s/)
+            if (content.length >= 2 && content[1] == "Utility") {
+                $(this).html(content[0] + " Utility")
+            } else {
+                $(this).html(content[0])
+            }
         });
     },
     checkLocalScreenshot: function (plugin) {
@@ -260,7 +268,8 @@ JqueryClass('cloudPluginBox', {
                     renderResults()
                 }
             },
-            dataType: 'json',
+            cache: false,
+            dataType: 'json'
         })
 
         // local search
@@ -301,7 +310,8 @@ JqueryClass('cloudPluginBox', {
                     if (results.cloud != null)
                         renderResults()
                 },
-                dataType: 'json',
+                cache: false,
+                dataType: 'json'
             })
         }
     },
@@ -383,7 +393,8 @@ JqueryClass('cloudPluginBox', {
                 if (results.local != null)
                     renderResults()
             },
-            dataType: 'json',
+            cache: false,
+            dataType: 'json'
         })
 
         // local search
@@ -424,7 +435,8 @@ JqueryClass('cloudPluginBox', {
                     if (results.cloud != null)
                         renderResults()
                 },
-                dataType: 'json',
+                cache: false,
+                dataType: 'json'
             })
         }
     },
@@ -448,7 +460,19 @@ JqueryClass('cloudPluginBox', {
 
         var category   = {}
         var categories = {
-            'All': plugins.length
+            'All': plugins.length,
+            'Delay': 0,
+            'Distortion': 0,
+            'Dynamics': 0,
+            'Filter': 0,
+            'Generator': 0,
+            'MIDI': 0,
+            'Modulator': 0,
+            'Reverb': 0,
+            'Simulator': 0,
+            'Spatial': 0,
+            'Spectral': 0,
+            'Utility': 0,
         }
         var cachedContentCanvas = {
             'All': self.find('#cloud-plugin-content-All')
@@ -461,14 +485,16 @@ JqueryClass('cloudPluginBox', {
             category = plugin.category[0]
             render   = self.cloudPluginBox('renderPlugin', plugin, cloudReached)
 
+            if (category == 'Utility' && plugin.category.length == 2 && plugin.category[1] == 'MIDI') {
+                category = 'MIDI'
+            }
+
             pluginsDict[plugin.uri] = plugin
 
-            if (category && category != 'All') {
-                if (categories[category] == null) {
-                    categories[category] = 1
+            if (category && category != 'All' && categories[category] != null) {
+                categories[category] += 1
+                if (cachedContentCanvas[category] == null) {
                     cachedContentCanvas[category] = self.find('#cloud-plugin-content-' + category)
-                } else {
-                    categories[category] += 1
                 }
                 render.clone(true).appendTo(cachedContentCanvas[category])
             }
@@ -486,10 +512,16 @@ JqueryClass('cloudPluginBox', {
         var self = $(this)
         self.data('categoryCount', categories)
 
-        var tab
         for (var category in categories) {
-            tab = self.find('#cloud-plugin-tab-' + category)
-            tab.html(tab.html().split(/\s/)[0] + ' <span class="plugin_count">(' + categories[category] + ')</span>')
+            var tab     = self.find('#cloud-plugin-tab-' + category)
+            var content = tab.html().split(/\s/)
+
+            if (content.length >= 2 && content[1] == "Utility") {
+                content = content[0] + " Utility"
+            } else {
+                content = content[0]
+            }
+            tab.html(content + ' <span class="plugin_count">(' + categories[category] + ')</span>')
         }
     },
 
@@ -554,22 +586,37 @@ JqueryClass('cloudPluginBox', {
                 } else if (updateOnly) {
                     continue
                 }
-                if (bundle_ids.indexOf(plugin.bundle_id) < 0 && (currentCategory == "All" || currentCategory == plugin.category[0])) {
+
+                var category = plugin.category[0]
+                if (category == 'Utility' && plugin.category.length == 2 && plugin.category[1] == 'MIDI') {
+                    category = 'MIDI'
+                }
+
+                // FIXME for midi
+                if (bundle_ids.indexOf(plugin.bundle_id) < 0 && (currentCategory == "All" || currentCategory == category)) {
                     bundle_ids.push(plugin.bundle_id)
                 }
+            }
+
+            if (bundle_ids.length == 0) {
+                $('#cloud_install_all').removeClass("disabled").css({color:'white'})
+                $('#cloud_update_all').removeClass("disabled").css({color:'white'})
+                new Notification('warn', 'All plugins are '+(updateOnly?'updated':'installed')+', nothing to do', 8000)
+                return
             }
 
             var count = 0
             var finished = function (resp, bundlename) {
                 self.cloudPluginBox('postInstallAction', resp.installed, resp.removed, bundlename)
-                if (resp.ok) {
-                    count += 1
-                    if (count == bundle_ids.length) {
-                        $('#cloud_install_all').removeClass("disabled").css({color:'white'})
-                        $('#cloud_update_all').removeClass("disabled") //.css({color:'white'})
-                    }
+                count += 1
+                if (count == bundle_ids.length) {
+                    $('#cloud_install_all').removeClass("disabled").css({color:'white'})
+                    $('#cloud_update_all').removeClass("disabled").css({color:'white'})
+                    new Notification('warn', 'All plugins are now '+(updateOnly?'updated':'installed'), 8000)
                 }
-                self.cloudPluginBox('search')
+                if (resp.ok) {
+                    self.cloudPluginBox('search')
+                }
             }
 
             for (var i in bundle_ids) {
@@ -588,7 +635,11 @@ JqueryClass('cloudPluginBox', {
             uri    = installed[i]
             plugin = self.data('pluginsDict')[uri]
 
-            plugin.status = 'installed'
+            if (! plugin) {
+                continue
+            }
+
+            plugin.status  = 'installed'
             plugin.bundles = [bundle]
             plugin.installedVersion = plugin.latestVersion
 
@@ -629,6 +680,9 @@ JqueryClass('cloudPluginBox', {
                 category = plugin.category[0]
 
                 if (category && category != 'All') {
+                    if (category == 'Utility' && plugin.category.length == 2 && plugin.category[1] == 'MIDI') {
+                        category = 'MIDI'
+                    }
                     categories[category] -= 1
                 }
                 categories['All'] -= 1
@@ -668,12 +722,17 @@ JqueryClass('cloudPluginBox', {
                 }
             }
 
+            var category = plugin.category[0]
+            if (category == 'Utility' && plugin.category.length == 2 && plugin.category[1] == 'MIDI') {
+                category = 'MIDI'
+            }
+
             var metadata = {
                 author: plugin.author,
                 uri: plugin.uri,
                 thumbnail_href: plugin.thumbnail_href,
                 screenshot_href: plugin.screenshot_href,
-                category: plugin.category[0] || "None",
+                category: category || "None",
                 installed_version: version(plugin.installedVersion),
                 latest_version: version(plugin.latestVersion),
                 package_name: (plugin.bundle_name || plugin.bundles[0]).replace(/\.lv2$/, ''),
@@ -686,7 +745,14 @@ JqueryClass('cloudPluginBox', {
                 pedalboard_href: desktop.getPedalboardHref(plugin.uri),
             };
 
-            var info = $(Mustache.render(TEMPLATES.cloudplugin_info, metadata))
+            var info = self.data('info')
+
+            if (info) {
+                info.remove()
+                self.data('info', null)
+            }
+
+            info = $(Mustache.render(TEMPLATES.cloudplugin_info, metadata))
 
             // hide control ports table if none available
             if (plugin.ports.control.input.length == 0) {
@@ -742,6 +808,9 @@ JqueryClass('cloudPluginBox', {
             }
 
             info.appendTo($('body'))
+            info.window({
+                windowName: "Cloud Plugin Info"
+            })
             info.window('open')
             self.data('info', info)
         }
@@ -769,6 +838,7 @@ JqueryClass('cloudPluginBox', {
                     localChecked = true
                     showInfo()
                 },
+                cache: false,
                 dataType: 'json'
             })
         }
@@ -802,23 +872,8 @@ JqueryClass('cloudPluginBox', {
                 cloudChecked = true
                 showInfo()
             },
+            cache: false,
             dataType: 'json'
         })
     },
 })
-
-function compareVersions(a, b) {
-    if (!a && !b)
-        return 0
-    if (!b)
-        return 1
-    if (!a)
-        return -1
-    for (var i = 0; i < 4; i++) {
-        if (a[i] > b[i])
-            return 1
-        if (a[i] < b[i])
-            return -1
-    }
-    return 0
-}

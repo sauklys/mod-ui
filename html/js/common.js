@@ -114,6 +114,30 @@ function getCookie(c_name, defaultValue) {
     return "";
 }
 
+function compareVersions(a, b, len) {
+    if (!a && !b) {
+        return 0
+    }
+    if (!b) {
+        return 1
+    }
+    if (!a) {
+        return -1
+    }
+    if (! len) {
+        len = 4
+    }
+    for (var i = 0; i < len; i++) {
+        if (a[i] > b[i]) {
+            return 1
+        }
+        if (a[i] < b[i]) {
+            return -1
+        }
+    }
+    return 0
+}
+
 function renderTime(time) {
     var months = ['Jan',
         'Feb',
@@ -139,4 +163,35 @@ function remove_from_array(array, element) {
     var index = array.indexOf(element)
     if (index > -1)
         array.splice(index, 1)
+}
+
+function wait_for_pedalboard_screenshot(bundlepath, callback) {
+    $.ajax({
+        url: "/pedalboard/image/check?bundlepath="+escape(bundlepath),
+        success: function (resp) {
+            if (resp.status == 1) {
+                // success
+                callback({'ok':true,'ctime':resp.ctime})
+                return
+            }
+
+            if (resp.status == 0) {
+                // pending
+                setTimeout(function() {
+                    wait_for_pedalboard_screenshot(bundlepath, callback)
+                }, 1000)
+                return
+            }
+
+            // error
+            callback({'ok':false})
+
+        },
+        error: function () {
+            callback({'ok':false})
+        },
+        cache: false,
+        global: false,
+        dataType: 'json'
+    })
 }

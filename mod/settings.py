@@ -79,6 +79,8 @@ MAX_THUMB_WIDTH = 350
 # Cloud API addresses
 CLOUD_HTTP_ADDRESS = os.environ.pop('MOD_CLOUD_HTTP_ADDRESS', "http://api.dev.moddevices.com/v2")
 PEDALBOARDS_HTTP_ADDRESS = os.environ.pop('MOD_PEDALBOARDS_HTTP_ADDRESS', "https://pedalboards-dev.moddevices.com")
+CONTROLCHAIN_HTTP_ADDRESS = os.environ.pop('MOD_CONTROLCHAIN_HTTP_ADDRESS',
+                                           "http://download.moddevices.com/releases/cc-firmware/v1")
 
 TUNER = os.environ.get('MOD_TUNER_PLUGIN', "gxtuner")
 TUNER_INSTANCE_ID = 9994
@@ -99,5 +101,6 @@ PEDALBOARD_URI = "urn:mod:pedalboard"
 CAPTURE_PATH='/tmp/capture.ogg'
 PLAYBACK_PATH='/tmp/playback.ogg'
 
-UPDATE_FILE='/data/modduo.tar'
+UPDATE_MOD_OS_FILE='/data/modduo.tar'
+UPDATE_CC_FIRMWARE_FILE='/tmp/cc-firmware.bin'
 USING_256_FRAMES_FILE='/data/using-256-frames'

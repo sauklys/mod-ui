@@ -40,11 +40,6 @@ $('document').ready(function() {
 
         var cmd = data[0]
 
-        if (cmd == "ping") {
-            ws.send("pong")
-            return
-        }
-
         if (cmd == "stats") {
             var cpuLoad = parseFloat(data[1])
             var xruns   = parseInt(data[2])
@@ -69,6 +64,13 @@ $('document').ready(function() {
                     timeout_xruns = null
                 }, 500)
             }
+
+            desktop.networkStatus.timedOutPhase = 0
+            return
+        }
+
+        if (cmd == "ping") {
+            ws.send("pong")
             return
         }
 
@@ -138,10 +140,14 @@ $('document').ready(function() {
             var instance = data[1]
             var symbol   = data[2]
             var actuator = data[3]
-            var label    = data[4]
-            var minimum  = parseFloat(data[5])
-            var maximum  = parseFloat(data[6])
-            var steps    = parseInt(data[7])
+            var minimum  = parseFloat(data[4])
+            var maximum  = parseFloat(data[5])
+            var steps    = parseInt(data[6])
+            var label    = data[7].replace(/_/g," ")
+
+            if (data.length > 8) {
+                console.log("FIXME: received hw_map with spaces:", data)
+            }
 
             desktop.hardwareManager.addHardwareMapping(instance, symbol, actuator, label, minimum, maximum, steps)
             return
@@ -282,7 +288,11 @@ $('document').ready(function() {
             var type     = data[2]
             var isOutput = parseInt(data[3]) == 0 // reversed
             var name     = data[4].replace(/_/g," ")
-            var index    = parseInt(data[5])
+            var index    = parseInt(data[data.length-1])
+
+            if (data.length > 6) {
+                console.log("FIXME: received add_hw_port with spaces:", data)
+            }
 
             if (isOutput) {
                 var el = $('<div id="' + instance + '" class="hardware-output" mod-port-index=' + index + ' title="Hardware ' + name + '">')
@@ -304,6 +314,45 @@ $('document').ready(function() {
             return
         }
 
+        if (cmd == "act_add") {
+            var metadata = JSON.parse(atob(data[1]))
+            desktop.hardwareManager.addActuator(metadata)
+            return
+        }
+
+        if (cmd == "act_del") {
+            var uri = data[1]
+            desktop.hardwareManager.removeActuator(uri)
+            return
+        }
+
+        if (cmd == "hw_add") {
+            var dev_uri = data[1]
+            var label   = data[2].replace(/_/g," ")
+            var version = data[data.length-1]
+
+            if (data.length > 4) {
+                console.log("FIXME: received hw_add with spaces:", data)
+            }
+
+            desktop.ccDeviceManager.deviceAdded(dev_uri, label, version)
+            desktop.checkHardwareDeviceVersion(dev_uri, label, version)
+            return
+        }
+
+        if (cmd == "hw_rem") {
+            var dev_uri = data[1]
+            var label   = data[2].replace(/_/g," ")
+            var version = data[data.length-1]
+
+            if (data.length > 4) {
+                console.log("FIXME: received hw_rem with spaces:", data)
+            }
+
+            desktop.ccDeviceManager.deviceRemoved(dev_uri, label, version)
+            return
+        }
+
         if (cmd == "loading_start") {
             loading  = true
             empty    = parseInt(data[1]) != 0
@@ -316,7 +365,11 @@ $('document').ready(function() {
             var presetId = parseInt(data[1])
 
             $.ajax({
-                url: '/hello',
+                url: '/pedalpreset/name',
+                type: 'GET',
+                data: {
+                    id: presetId,
+                },
                 success: function (resp) {
                     desktop.pedalboard.pedalboard('scheduleAdapt', true)
                     desktop.pedalboardEmpty    = empty && !modified
@@ -326,6 +379,10 @@ $('document').ready(function() {
                     if (presetId >= 0) {
                         $('#js-preset-enabler').hide()
                         $('#js-preset-menu').show()
+
+                        if (resp.ok) {
+                            desktop.titleBox.text((desktop.title || 'Untitled') + " - " + resp.name)
+                        }
                     }
 
                     loading = false
@@ -361,6 +418,11 @@ $('document').ready(function() {
         if (cmd == "rescan") {
             var resp = JSON.parse(atob(data[1]))
             desktop.updatePluginList(resp.installed, resp.removed)
+            return
+        }
+
+        if (cmd == "cc-device-updated") {
+            desktop.ccDeviceUpdateFinished()
             return
         }
 

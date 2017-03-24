@@ -57,11 +57,11 @@
     {% autoescape None %}
     var TEMPLATES = {}
     SITEURL = '{{cloud_url}}'
-    PEDALBOARDS_URL = '{{pedalboards_url}}'
-    LV2_PLUGIN_DIR  = '{{lv2_plugin_dir}}'
-    VERSION         = '{{version}}'
-    var BUFFERSIZE  = {{bufferSize}}
-    var SAMPLERATE  = {{sampleRate}}
+    PEDALBOARDS_URL  = '{{pedalboards_url}}'
+    CONTROLCHAIN_URL = '{{controlchain_url}}'
+    LV2_PLUGIN_DIR   = '{{lv2_plugin_dir}}'
+    VERSION          = '{{version}}'
+    var SAMPLERATE   = {{sampleRate}}
     var NOTIFICATIONS_ENABLED = true
     var HARDWARE_PROFILE = JSON.parse(atob('{{hardware_profile}}'))
     var DEFAULT_ICON_TEMPLATE = '{{default_icon_template}}'
@@ -98,6 +98,8 @@ $('document').ready(function() {
         midiPortsList: $("#midi-ports-list"),
         pedalPresetsWindow: $('#pedal-presets-window'),
         pedalPresetsList: $("#pedal-presets-list"),
+        pedalPresetsOverlay: $("#pedal-presets-list-input"),
+        updateDeviceWindow: $('#cc-device-update-window'),
         saveBox: $('#save-pedalboard'),
         saveButton: $('#pedalboard-info .js-save'),
         saveAsButton: $('#pedalboard-info .js-save-as'),
@@ -122,6 +124,8 @@ $('document').ready(function() {
         shareButton: $('#pedalboard-info .js-share'),
         shareWindow: $('#share-window'),
         presetSaveBox: $('#save-preset'),
+        devicesIcon: $('#mod-devices'),
+        devicesWindow: $('#mod-devices-window'),
         statusIcon: $('#mod-status'),
         upgradeIcon: $('#mod-update'),
         upgradeWindow: $('#mod-upgrade'),
@@ -199,6 +203,7 @@ $('document').ready(function() {
         success: function (info) {
             INFO = info
         },
+        cache: false,
         dataType: 'json'
     });
     */
@@ -228,6 +233,7 @@ $('document').ready(function() {
 <script type="text/javascript" src="js/networkstatus.js?v={{version}}"></script>
 <script type="text/javascript" src="js/upgrade.js?v={{version}}"></script>
 <script type="text/javascript" src="js/host.js?v={{version}}"></script>
+<script type="text/javascript" src="js/cc-manager.js?v={{version}}"></script>
 <script type="text/javascript" src="js/nprogress.js?v={{version}}"></script>
 
 </head>
@@ -270,7 +276,7 @@ $('document').ready(function() {
 <!-- PRELOAD -->
 <div class="mod-hidden">
     <img src="img/icons/blocked.svg" alt=""/>
-    <img src="img/icons/25/reload.png" alt=""/>
+    <img src="img/icons/25/reload.png" width="25px" height="25px" alt=""/>
 </div>
 <!-- END PRELOAD -->
 
@@ -294,9 +300,10 @@ $('document').ready(function() {
         <!-- SAVE PEDALBOARD WINDOW -->
         <div id="save-pedalboard" class="save-popup mod-hidden">
             <div class="mod-box">
-                <h1>Saving Pedalboard</h1>
+                <h1 class="pull-left">Saving Pedalboard</h1><span class="js-cancel-saving close">&times;</span>
                 <form class="bottom">
-                    <div class="controls clearfix">
+                    <div class="clearfix"></div>
+                    <div class="controls">
                         <label>Name</label>
                         <input type="text" class="form-control"/>
                     </div>
@@ -312,9 +319,10 @@ $('document').ready(function() {
         <!-- SAVE PRESET WINDOW -->
         <div id="save-preset" class="save-popup mod-hidden" style="z-index:1001;">
             <div class="mod-box">
-                <h1>Saving Preset</h1>
+                <h1 class="pull-left">Saving Preset</h1><span class="js-cancel-saving close">&times;</span>
                 <form class="bottom">
-                    <div class="controls clearfix">
+                    <div class="clearfix"></div>
+                    <div class="controls">
                         <label>Name</label>
                         <input type="text" class="form-control"/>
                     </div>
@@ -330,19 +338,20 @@ $('document').ready(function() {
         <!-- PEDALBOARD SHARE WINDOW -->
         <div id="share-window" class="save-popup mod-hidden">
             <div class="box">
-                <h1>SHARE</h1>
+                <h1 class="pull-left">SHARE</h1><span class="js-cancel close">&times;</span>
                 <form>
+                    <div class="clearfix"></div>
                     <div class="form-group" id="share-window-form">
                         <div class="col-sm-6 unpadded-l">
                             <label for="pedalboard-share-name">
                                 AUTHOR NAME <br/>
-                                <input type="text" class="form-control" id="pedalboard-share-name" value="{{user_name}}"/>
+                                <input type="text" class="form-control" id="pedalboard-share-name" value='{{user_name}}'/>
                             </label>
                         </div>
                         <div class="col-sm-6 unpadded">
                             <label for="pedalboard-share-email">
                                 E-MAIL <br/>
-                                <input type="text" class="form-control" id="pedalboard-share-email" value="{{user_email}}"/>
+                                <input type="text" class="form-control" id="pedalboard-share-email" value='{{user_email}}'/>
                             </label>
                         </div>
                         <label for="pedalboard-share-title">
@@ -438,7 +447,7 @@ $('document').ready(function() {
                             <ul class="menu-preset-list sub-menu"></ul>
                         </li>
                         -->
-                        <li class="js-preset-manage">Manage / Assign</li>
+                        <li class="js-preset-manage">Load / Manage</li>
                         <li class="js-preset-disable">Disable</li>
                     </ul>
                     <button class="js-reset">New Pedalboard</button>
@@ -481,9 +490,10 @@ $('document').ready(function() {
         <!-- PEDALBOARD PRESETS -->
         <div id="pedal-presets-window" class="save-popup mod-hidden">
             <div class="mod-box" style="width: 400px">
-                <h1 class="pull-left">Manage presets</h1><span class="js-cancel close">&times;</span>
+                <h1 class="pull-left">Load / Manage presets</h1><span class="js-cancel close">&times;</span>
                 <form class="bottom">
                     <div class="controls clearfix">
+                        <input type="text" name="pedal-presets-list" value="" id="pedal-presets-list-input"/>
                         <select class="preset-list" size="9" id="pedal-presets-list" style="background-color:inherit;"></select>
                     </div>
                     <div class="controls actions">
@@ -497,6 +507,34 @@ $('document').ready(function() {
         </div>
         <!-- END PEDALBOARD PRESETS -->
 
+        <!-- CC DEVICE UPDATE WINDOW -->
+        <div id="cc-device-update-window" class="save-popup mod-hidden">
+            <div class="mod-box" style="width: 600px; margin:-150px -280px">
+                <h1 class="pull-left">Control-Chain Device Update</h1><span class="js-cancel close">&times;</span>
+                <form class="bottom">
+                    <div class="clearfix"></div>
+                    <div id="cc-device-update-text">
+                        <p>
+                            Your Control-Chain device firmware is ready to be updated.
+                        </p>
+                        <p>
+                            To begin, follow these steps:
+                        </p>
+                        <ul>
+                            <li>Disconnect the device from the control-chain/ethernet port</li>
+                            <li>Hold down the first footswitch on the control-chain device</li>
+                            <li>While the first footswitch is down, connect the device to the MOD via USB</li>
+                            <li>Wait for the "update completed" message</li>
+                        </ul>
+                        <p>
+                            Note: The update should only take a few seconds.
+                        </p>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <!-- END CC DEVICE UPDATE WINDOW -->
+
     </div>
     <!-- END PEDALBOARD -->
 
@@ -509,6 +547,7 @@ $('document').ready(function() {
         <div id="banks-saving">Auto saving banks...</div>
         <div id="mod-update" class="status icon"></div>
         <div id="mod-status" class="status icon mod-hidden"></div>
+        <div id="mod-devices" class="status icon"></div>
         <div id="mod-ram" class="icon">
             <div class="progress" id="ram-bar" style="width: 100%;">
                 <div class="bar"></div> <!-- not sure if this is needed -->
@@ -547,6 +586,7 @@ $('document').ready(function() {
             <li id="effect-tab-Dynamics">Dynamics</li>
             <li id="effect-tab-Filter">Filter</li>
             <li id="effect-tab-Generator">Generator</li>
+            <li id="effect-tab-MIDI">MIDI Utility</li>
             <li id="effect-tab-Modulator">Modulator</li>
             <li id="effect-tab-Reverb">Reverb</li>
             <li id="effect-tab-Simulator">Simulator</li>
@@ -580,6 +620,7 @@ $('document').ready(function() {
                     <div id="effect-content-Dynamics" class="plugins-wrapper"></div>
                     <div id="effect-content-Filter" class="plugins-wrapper"></div>
                     <div id="effect-content-Generator" class="plugins-wrapper"></div>
+                    <div id="effect-content-MIDI" class="plugins-wrapper"></div>
                     <div id="effect-content-Modulator" class="plugins-wrapper"></div>
                     <div id="effect-content-Reverb" class="plugins-wrapper"></div>
                     <div id="effect-content-Simulator" class="plugins-wrapper"></div>
@@ -621,6 +662,7 @@ $('document').ready(function() {
                     <li id="cloud-plugin-tab-Dynamics">Dynamics</li>
                     <li id="cloud-plugin-tab-Filter">Filter</li>
                     <li id="cloud-plugin-tab-Generator">Generator</li>
+                    <li id="cloud-plugin-tab-MIDI">MIDI Utility</li>
                     <li id="cloud-plugin-tab-Modulator">Modulator</li>
                     <li id="cloud-plugin-tab-Reverb">Reverb</li>
                     <li id="cloud-plugin-tab-Simulator">Simulator</li>
@@ -641,6 +683,7 @@ $('document').ready(function() {
                     <div id="cloud-plugin-content-Dynamics" class="plugins-wrapper"></div>
                     <div id="cloud-plugin-content-Filter" class="plugins-wrapper"></div>
                     <div id="cloud-plugin-content-Generator" class="plugins-wrapper"></div>
+                    <div id="cloud-plugin-content-MIDI" class="plugins-wrapper"></div>
                     <div id="cloud-plugin-content-Modulator" class="plugins-wrapper"></div>
                     <div id="cloud-plugin-content-Reverb" class="plugins-wrapper"></div>
                     <div id="cloud-plugin-content-Simulator" class="plugins-wrapper"></div>
@@ -735,7 +778,7 @@ $('document').ready(function() {
     <!-- MOD UPDATE/UPGRADE TOOLTIP -->
     <div class="tooltip mod-hidden" style="right:102px;">
         <div class="arrow"></div>
-        <div class="text">New updates are available. Click to upgrade.</div>
+        <div class="text">New updates are available. Click to know more.</div>
     </div>
     <!-- END MOD UPDATE/UPGRADE TOOLTIP -->
 
@@ -764,6 +807,17 @@ $('document').ready(function() {
         </div>
     </div>
     <!-- END MOD UPDATE/UPGRADE BOX -->
+
+    <!-- CONTROL CHAIN DEVICES BOX -->
+    <div id="mod-devices-window" class="mod-hidden">
+        <div class="box">
+            <div class="mod-devices-window-list">
+                <header><h4>Control Chain Devices</h4></header>
+                <ul></ul>
+            </div>
+        </div>
+    </div>
+    <!-- END CONTROL CHAIN DEVICES BOX -->
 
 <!-- END WRAPPER -->
 </div>

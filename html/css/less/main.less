@@ -473,8 +473,9 @@ hr.dotted {
       background-image: url(../img/icons/36/disconnect.png);
     }
   }
-  #mod-cloud {
-    background-image: url(../img/icons/36/cloud.png);
+
+  #mod-devices {
+    background-image: url(../img/icons/36/control-chain.png);
   }
 }
 
@@ -654,13 +655,12 @@ header#pedalboard-actions {
   }
 }
 
+#mod-devices-window,
 #mod-upgrade {
   background: white;
   color: black;
   font-size: 15px;
   max-height: 350px;
-  max-width: 450px;
-  min-width: 350px;
   overflow: auto;
   position: absolute;
   right: 10px;
@@ -675,6 +675,16 @@ header#pedalboard-actions {
     background-color: #8888ff;
     height: 20px;
   }
+}
+
+#mod-devices-window {
+  max-width: 600px;
+  min-width: 500px;
+}
+
+#mod-upgrade {
+  max-width: 450px;
+  min-width: 350px;
 }
 
 #plugins-library {
@@ -788,6 +798,10 @@ header#pedalboard-actions {
     padding: 10px 0 0 0;
     position: relative;
     width: 100%;
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: -ms-flexbox;
+    display: flex;
     li {
       background: rgba(17, 17, 17, 0.66);
       color: #bbb;
@@ -975,6 +989,7 @@ header#pedalboard-actions {
     z-index: 40;
     .box {
       margin-top: 3em;
+      margin-bottom: 3em;
       background-color: #111;
       padding: 15px;
       border: 2px solid #333;
@@ -1008,7 +1023,6 @@ header#pedalboard-actions {
       height: 100%;
       display: block;
       position: a;
-      padding-bottom: 20%;
       padding-left: 45px;
       @gradient1: rgba(17,17,17,0.1);
       @gradient2: rgba(17,17,17,1);

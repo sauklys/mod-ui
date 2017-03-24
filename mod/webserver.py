@@ -33,9 +33,9 @@ from uuid import uuid4
 
 from mod.settings import (APP, LOG,
                           HTML_DIR, DOWNLOAD_TMP_DIR, DEVICE_KEY, DEVICE_WEBSERVER_PORT,
-                          CLOUD_HTTP_ADDRESS, PEDALBOARDS_HTTP_ADDRESS,
+                          CLOUD_HTTP_ADDRESS, PEDALBOARDS_HTTP_ADDRESS, CONTROLCHAIN_HTTP_ADDRESS,
                           LV2_PLUGIN_DIR, LV2_PEDALBOARDS_DIR, IMAGE_VERSION,
-                          UPDATE_FILE, USING_256_FRAMES_FILE,
+                          UPDATE_CC_FIRMWARE_FILE, UPDATE_MOD_OS_FILE, USING_256_FRAMES_FILE,
                           DEFAULT_ICON_TEMPLATE, DEFAULT_SETTINGS_TEMPLATE, DEFAULT_ICON_IMAGE,
                           DEFAULT_PEDALBOARD, DATA_DIR, FAVORITES_JSON_FILE, PREFERENCES_JSON_FILE, USER_ID_JSON_FILE)
 
@@ -87,7 +87,7 @@ def install_bundles_in_tmp_dir(callback):
             resp, data = yield gen.Task(SESSION.host.remove_bundle, bundlepath, True)
 
             # When removing bundles we can ignore the ones that are not loaded
-            # It can happen if a previous install failed abruptely
+            # It can happen if a previous install failed abruptly
             if not resp and data == "Bundle not loaded":
                 resp = True
                 data = []
@@ -187,14 +187,40 @@ def move_file(src, dst, callback):
     ioloop = IOLoop.instance()
     ioloop.add_handler(proc.stdout.fileno(), end_move, 16)
 
-class JsonRequestHandler(web.RequestHandler):
+class TimelessRequestHandler(web.RequestHandler):
+    def compute_etag(self):
+        return None
+
+    def set_default_headers(self):
+        self._headers.pop("Date")
+
+    def should_return_304(self):
+        return False
+
+class TimelessStaticFileHandler(web.StaticFileHandler):
+    def get_cache_time(self, path, modified, mime_type):
+        return 0
+
+    def get_modified_time(self):
+        return None
+
+    def set_default_headers(self):
+        self._headers.pop("Date")
+
+    def set_extra_headers(self, path):
+        self.set_header("Cache-Control", "public, max-age=31536000")
+
+    def should_return_304(self):
+        return self.check_etag_header()
+
+class JsonRequestHandler(TimelessRequestHandler):
     def write(self, data):
         # FIXME: something is sending strings out, need to investigate what later..
         # it's likely something using write(json.dumps(...))
         # we want to prevent that as it causes issues under Mac OS
 
         if isinstance(data, (bytes, unicode_type, dict)):
-            web.RequestHandler.write(self, data)
+            TimelessRequestHandler.write(self, data)
             self.finish()
             return
 
@@ -216,7 +242,7 @@ class JsonRequestHandler(web.RequestHandler):
             data = json.dumps(data)
             self.set_header("Content-Type", "application/json; charset=UTF-8")
 
-        web.RequestHandler.write(self, data)
+        TimelessRequestHandler.write(self, data)
         self.finish()
 
 class RemoteRequestHandler(JsonRequestHandler):
@@ -293,15 +319,13 @@ class SystemInfo(JsonRequestHandler):
         self.write(info)
 
 class UpdateDownload(SimpleFileReceiver):
-    destination_dir = "/tmp/update"
+    destination_dir = "/tmp/os-update"
 
-    @web.asynchronous
-    @gen.engine
     def process_file(self, data, callback=lambda:None):
         self.sfr_callback = callback
 
         # TODO: verify checksum?
-        move_file(os.path.join(self.destination_dir, data['filename']), UPDATE_FILE, self.move_file_finished)
+        move_file(os.path.join(self.destination_dir, data['filename']), UPDATE_MOD_OS_FILE, self.move_file_finished)
 
     def move_file_finished(self):
         self.result = True
@@ -311,7 +335,7 @@ class UpdateBegin(JsonRequestHandler):
     @web.asynchronous
     @gen.engine
     def post(self):
-        if not os.path.exists(UPDATE_FILE):
+        if not os.path.exists(UPDATE_MOD_OS_FILE):
             self.write(False)
             return
 
@@ -321,6 +345,19 @@ class UpdateBegin(JsonRequestHandler):
         # send message asap, but not quite right now
         yield gen.Task(self.flush, False)
         yield gen.Task(SESSION.hmi.send, "restore", datatype='boolean')
+
+class ControlChainDownload(SimpleFileReceiver):
+    destination_dir = "/tmp/cc-update"
+
+    def process_file(self, data, callback=lambda:None):
+        self.sfr_callback = callback
+
+        # TODO: verify checksum?
+        move_file(os.path.join(self.destination_dir, data['filename']), UPDATE_CC_FIRMWARE_FILE, self.move_file_finished)
+
+    def move_file_finished(self):
+        self.result = True
+        self.sfr_callback()
 
 class EffectInstaller(SimpleFileReceiver):
     destination_dir = DOWNLOAD_TMP_DIR
@@ -372,7 +409,7 @@ class SDKEffectInstaller(EffectInstaller):
 
         self.write(resp)
 
-class EffectResource(web.StaticFileHandler):
+class EffectResource(TimelessStaticFileHandler):
 
     def initialize(self):
         # Overrides StaticFileHandler initialize
@@ -408,7 +445,7 @@ class EffectResource(web.StaticFileHandler):
         super(EffectResource, self).initialize(os.path.join(HTML_DIR, 'resources'))
         return super(EffectResource, self).get(path)
 
-class EffectImage(web.StaticFileHandler):
+class EffectImage(TimelessStaticFileHandler):
     def initialize(self):
         uri = self.get_argument('uri')
 
@@ -422,7 +459,7 @@ class EffectImage(web.StaticFileHandler):
         except:
             raise web.HTTPError(404)
 
-        return web.StaticFileHandler.initialize(self, root)
+        return TimelessStaticFileHandler.initialize(self, root)
 
     def parse_url_path(self, image):
         try:
@@ -436,11 +473,11 @@ class EffectImage(web.StaticFileHandler):
             except:
                 raise web.HTTPError(404)
             else:
-                web.StaticFileHandler.initialize(self, os.path.dirname(path))
+                TimelessStaticFileHandler.initialize(self, os.path.dirname(path))
 
         return path
 
-class EffectFile(web.StaticFileHandler):
+class EffectFile(TimelessStaticFileHandler):
     def initialize(self):
         # return custom type directly. The browser will do the parsing
         self.custom_type = None
@@ -457,7 +494,7 @@ class EffectFile(web.StaticFileHandler):
         except:
             raise web.HTTPError(404)
 
-        return web.StaticFileHandler.initialize(self, root)
+        return TimelessStaticFileHandler.initialize(self, root)
 
     def parse_url_path(self, prop):
         try:
@@ -466,14 +503,14 @@ class EffectFile(web.StaticFileHandler):
             raise web.HTTPError(404)
 
         if prop in ("iconTemplate", "settingsTemplate", "stylesheet", "javascript"):
-            self.custom_type = "text/plain"
+            self.custom_type = "text/plain; charset=UTF-8"
 
         return path
 
     def get_content_type(self):
         if self.custom_type is not None:
             return self.custom_type
-        return web.StaticFileHandler.get_content_type(self)
+        return TimelessStaticFileHandler.get_content_type(self)
 
 class EffectAdd(JsonRequestHandler):
     @web.asynchronous
@@ -694,7 +731,7 @@ class PedalboardSave(JsonRequestHandler):
             'bundlepath': bundlepath
         })
 
-class PedalboardPackBundle(web.RequestHandler):
+class PedalboardPackBundle(TimelessRequestHandler):
     @web.asynchronous
     @gen.engine
     def get(self):
@@ -839,10 +876,10 @@ class PedalboardRemove(JsonRequestHandler):
         remove_pedalboard_from_banks(bundlepath)
         self.write(True)
 
-class PedalboardImage(web.StaticFileHandler):
+class PedalboardImage(TimelessStaticFileHandler):
     def initialize(self):
         root = self.get_argument('bundlepath')
-        return web.StaticFileHandler.initialize(self, root)
+        return TimelessStaticFileHandler.initialize(self, root)
 
     def parse_url_path(self, image):
         return os.path.join(self.root, "%s.png" % image)
@@ -856,6 +893,15 @@ class PedalboardImageGenerate(JsonRequestHandler):
         self.write({
             'ok'   : ok,
             'ctime': "%.1f" % ctime,
+        })
+
+class PedalboardImageCheck(JsonRequestHandler):
+    def get(self):
+        bundlepath = os.path.abspath(self.get_argument('bundlepath'))
+        ret, ctime = SESSION.screenshot_generator.check_screenshot(bundlepath)
+        self.write({
+            'status': ret,
+            'ctime' : "%.1f" % ctime,
         })
 
 class PedalboardImageWait(JsonRequestHandler):
@@ -875,8 +921,10 @@ class PedalboardPresetEnable(JsonRequestHandler):
         self.write(True)
 
 class PedalboardPresetDisable(JsonRequestHandler):
+    @web.asynchronous
+    @gen.engine
     def post(self):
-        SESSION.host.pedalpreset_clear()
+        yield gen.Task(SESSION.host.pedalpreset_disable)
         self.write(True)
 
 class PedalboardPresetSave(JsonRequestHandler):
@@ -893,6 +941,13 @@ class PedalboardPresetSaveAs(JsonRequestHandler):
             'ok': idx is not None,
             'id': idx
         })
+
+class PedalboardPresetRename(JsonRequestHandler):
+    def get(self):
+        idx   = int(self.get_argument('id'))
+        title = self.get_argument('title')
+        ok    = SESSION.host.pedalpreset_rename(idx, title)
+        self.write(ok)
 
 class PedalboardPresetRemove(JsonRequestHandler):
     def get(self):
@@ -951,7 +1006,15 @@ class BankLoad(JsonRequestHandler):
 
         # Put the full pedalboard info into banks
         for bank in banks:
-            bank['pedalboards'] = [pedalboards_data[os.path.abspath(pb['bundle'])] for pb in bank['pedalboards']]
+            bank_pedalboards = []
+            for pb in bank['pedalboards']:
+                bundle = os.path.abspath(pb['bundle'])
+                try:
+                    pbdata = pedalboards_data[bundle]
+                except KeyError:
+                    continue
+                bank_pedalboards.append(pbdata)
+            bank['pedalboards'] = bank_pedalboards
 
         # All set
         self.write(banks)
@@ -967,7 +1030,7 @@ class HardwareLoad(JsonRequestHandler):
         hardware = SESSION.get_hardware()
         self.write(hardware)
 
-class TemplateHandler(web.RequestHandler):
+class TemplateHandler(TimelessRequestHandler):
     def get(self, path):
         # Caching strategy.
         # 1. If we don't have a version parameter, redirect
@@ -995,7 +1058,7 @@ class TemplateHandler(web.RequestHandler):
             context = getattr(self, section)()
         except AttributeError:
             context = {}
-        context['cloud_url'] = CLOUD_HTTP_ADDRESS
+        context['cloud_url']  = CLOUD_HTTP_ADDRESS
         context['bufferSize'] = get_jack_buffer_size()
         context['sampleRate'] = get_jack_sample_rate()
         self.write(loader.load(path).generate(**context))
@@ -1019,7 +1082,7 @@ class TemplateHandler(web.RequestHandler):
         with open(DEFAULT_SETTINGS_TEMPLATE, 'r') as fh:
             default_settings_template = squeeze(fh.read().replace("'", "\\'"))
 
-        pbname = xhtml_escape(SESSION.host.pedalboard_name)
+        pbname = SESSION.host.pedalboard_name
         prname = SESSION.host.pedalpreset_name()
 
         fullpbname = pbname or "Untitled"
@@ -1032,18 +1095,19 @@ class TemplateHandler(web.RequestHandler):
             'default_pedalboard': DEFAULT_PEDALBOARD,
             'cloud_url': CLOUD_HTTP_ADDRESS,
             'pedalboards_url': PEDALBOARDS_HTTP_ADDRESS,
+            'controlchain_url': CONTROLCHAIN_HTTP_ADDRESS,
             'hardware_profile': b64encode(json.dumps(SESSION.get_hardware_actuators()).encode("utf-8")),
             'version': self.get_argument('v'),
             'lv2_plugin_dir': LV2_PLUGIN_DIR,
             'bundlepath': SESSION.host.pedalboard_path,
-            'title':  pbname,
+            'title':  squeeze(pbname.replace("'", "\\'")),
             'size': json.dumps(SESSION.host.pedalboard_size),
-            'fulltitle':  fullpbname,
+            'fulltitle':  xhtml_escape(fullpbname),
             'titleblend': '' if SESSION.host.pedalboard_name else 'blend',
             'using_app': 'true' if APP else 'false',
             'using_mod': 'true' if DEVICE_KEY else 'false',
-            'user_name': xhtml_escape(user_id.get("name", "")),
-            'user_email': xhtml_escape(user_id.get("email", "")),
+            'user_name': squeeze(user_id.get("name", "").replace("'", "\\'")),
+            'user_email': squeeze(user_id.get("email", "").replace("'", "\\'")),
             'favorites': json.dumps(gState.favorites),
             'preferences': json.dumps(prefs),
         }
@@ -1072,14 +1136,14 @@ class TemplateHandler(web.RequestHandler):
         context['pedalboard'] = b64encode(json.dumps(pedalboard).encode("utf-8"))
         return context
 
-class TemplateLoader(web.RequestHandler):
+class TemplateLoader(TimelessRequestHandler):
     def get(self, path):
         self.set_header("Content-Type", "text/plain; charset=UTF-8")
         with open(os.path.join(HTML_DIR, 'include', path), 'r') as fh:
             self.write(fh.read())
         self.finish()
 
-class BulkTemplateLoader(web.RequestHandler):
+class BulkTemplateLoader(TimelessRequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/plain; charset=UTF-8")
         basedir = os.path.join(HTML_DIR, 'include')
@@ -1346,6 +1410,8 @@ application = web.Application(
             (r"/update/download/", UpdateDownload),
             (r"/update/begin", UpdateBegin),
 
+            (r"/controlchain/download/", ControlChainDownload),
+
             (r"/resources/(.*)", EffectResource),
 
             # plugin management
@@ -1385,6 +1451,7 @@ application = web.Application(
             (r"/pedalboard/remove/", PedalboardRemove),
             (r"/pedalboard/image/(screenshot|thumbnail).png", PedalboardImage),
             (r"/pedalboard/image/generate", PedalboardImageGenerate),
+            (r"/pedalboard/image/check", PedalboardImageCheck),
             (r"/pedalboard/image/wait", PedalboardImageWait),
 
             # pedalboard stuff
@@ -1392,6 +1459,7 @@ application = web.Application(
             (r"/pedalpreset/disable", PedalboardPresetDisable),
             (r"/pedalpreset/save", PedalboardPresetSave),
             (r"/pedalpreset/saveas", PedalboardPresetSaveAs),
+            (r"/pedalpreset/rename", PedalboardPresetRename),
             (r"/pedalpreset/remove", PedalboardPresetRemove),
             (r"/pedalpreset/list", PedalboardPresetList),
             (r"/pedalpreset/name", PedalboardPresetName),
@@ -1442,9 +1510,13 @@ application = web.Application(
 
             (r"/websocket/?$", ServerWebSocket),
 
-            (r"/(.*)", web.StaticFileHandler, {"path": HTML_DIR}),
+            (r"/(.*)", TimelessStaticFileHandler, {"path": HTML_DIR}),
         ],
         debug=LOG and False, **settings)
+
+def signal_device_firmware_updated():
+    os.remove(UPDATE_CC_FIRMWARE_FILE)
+    SESSION.signal_device_updated()
 
 def signal_upgrade_check():
     with open("/root/check-upgrade-system", 'r') as fh:
@@ -1458,7 +1530,10 @@ def signal_upgrade_check():
 
 def signal_recv(sig, frame=0):
     if sig == SIGUSR1:
-        func = SESSION.signal_save
+        if os.path.exists(UPDATE_CC_FIRMWARE_FILE):
+            func = signal_device_firmware_updated
+        else:
+            func = SESSION.signal_save
     elif sig == SIGUSR2:
         if os.path.exists("/root/check-upgrade-system") and \
            os.path.exists("/etc/systemd/system/upgrade-system-check.service"):

@@ -28,6 +28,8 @@ function Desktop(elements) {
         midiPortsList: $('<div>'),
         pedalPresetsWindow: $('<div>'),
         pedalPresetsList: $('<div>'),
+        pedalPresetsOverlay: $('<div>'),
+        updateDeviceWindow: $('<div>'),
         saveBox: $('<div>'),
         saveButton: $('<div>'),
         saveAsButton: $('<div>'),
@@ -55,6 +57,8 @@ function Desktop(elements) {
         shareButton: $('<div>'),
         shareWindow: $('<div>'),
         presetSaveBox: $('<div>'),
+        devicesIcon: $('<div>'),
+        devicesWindow: $('<div>'),
         statusIcon: $('<div>'),
         upgradeIcon: $('<div>'),
         upgradeWindow: $('<div>'),
@@ -81,6 +85,7 @@ function Desktop(elements) {
 
     this.pluginIndexerData = {}
     this.pedalboardIndexerData = {}
+    this.previousPedalboardList = null
 
     this.resetPluginIndexer = function (plugins) {
         self.pluginIndexer = lunr(function () {
@@ -110,12 +115,16 @@ function Desktop(elements) {
             success: function(stats) {
                 self.pedalboardStatsSuccess = true;
                 self.pedalboardStats = stats;
-            }
+            },
+            cache: false
         })
     };
     this.getPedalboardHref = function(uri) {
+        if (!this.pedalboardStatsSuccess) {
+            return null;
+        }
         var base64Uri = btoa(uri);
-        if (!this.pedalboardStatsSuccess || !this.pedalboardStats[base64Uri]) {
+        if (!this.pedalboardStats[base64Uri]) {
             return null;
         }
         var encodedUri = encodeURIComponent(uri);
@@ -145,6 +154,9 @@ function Desktop(elements) {
             })
         },
         setEnabled: function (instance, portSymbol, enabled) {
+            if (instance == "/pedalboard") {
+                return
+            }
             self.pedalboard.pedalboard('setPortEnabled', instance, portSymbol, enabled)
         },
         renderForm: function (instance, port) {
@@ -153,8 +165,7 @@ function Desktop(elements) {
             if (instance == "/pedalboard") {
                 label = "Pedalboard"
             } else {
-                var plugin = self.pedalboard.pedalboard('getGui', instance).effect
-                label = plugin.label
+                label = self.pedalboard.pedalboard('getLabel', instance)
             }
 
             if (port.symbol == ':bypass' || port.symbol == ':presets') {
@@ -176,12 +187,17 @@ function Desktop(elements) {
     this.pedalPresets = new PedalboardPresetsManager({
         pedalPresetsWindow: elements.pedalPresetsWindow,
         pedalPresetsList: elements.pedalPresetsList,
+        pedalPresetsOverlay: elements.pedalPresetsOverlay,
         hardwareManager: self.hardwareManager,
+        renamedCallback: function (name) {
+            self.titleBox.text((self.title || 'Untitled') + " - " + name)
+        }
     })
 
     this.isApp = false
     this.title = ''
     this.cloudAccessToken = null
+    this.cloudHardwareDeviceVersions = null
     this.pedalboardBundle = null
     this.pedalboardEmpty  = true
     this.pedalboardModified = false
@@ -211,7 +227,7 @@ function Desktop(elements) {
     }
 
     elements.pedalboardTrigger.click(function () {
-        self.windowManager.closeWindows()
+        self.windowManager.closeWindows(null, true)
     })
 
     this.titleBox = elements.titleBox
@@ -238,6 +254,11 @@ function Desktop(elements) {
     }
 
     this.pedalboardListFunction = function (callback) {
+        if (self.previousPedalboardList != null && callback) {
+            callback(self.previousPedalboardList)
+            return
+        }
+
         $.ajax({
             method: 'GET',
             url: '/pedalboard/list',
@@ -252,9 +273,11 @@ function Desktop(elements) {
                     })
                 }
                 self.pedalboardIndexerData = allpedals
+                self.previousPedalboardList = pedals
 
-                if (callback)
+                if (callback) {
                     callback(pedals)
+                }
             },
             cache: false,
             dataType: 'json'
@@ -411,6 +434,95 @@ function Desktop(elements) {
         })
     }
 
+    elements.devicesIcon.statusTooltip()
+    this.ccDeviceManager = new ControlChainDeviceManager({
+        devicesIcon: elements.devicesIcon,
+        devicesWindow: elements.devicesWindow,
+        updateInfoWindow: elements.updateDeviceWindow,
+        setIconTooltip: function (msg) {
+            elements.devicesIcon.statusTooltip('message', msg, true)
+        },
+        showNotification: function (msg) {
+            if (! self.loadingPeldaboardForFirstTime) {
+                new Notification('info', msg, 5000)
+            }
+        },
+    })
+
+    this.ccDeviceUpdateFinished = function () {
+        elements.upgradeWindow.upgradeWindow('setUpdated')
+        elements.upgradeWindow.hide()
+        self.ccDeviceManager.hideUpdateWindow()
+        new Notification("info", "Control-Chain device firmware is now updated!")
+    }
+
+    this.checkHardwareDeviceVersion = function (dev_uri, label, version) {
+        if (self.cloudAccessToken == null) {
+            self.authenticateDevice(function (ok) {
+                if (ok && self.cloudAccessToken != null) {
+                    self.checkHardwareDeviceVersion(dev_uri, label, version)
+                } else {
+                    console.log("Notice: failed to check device version")
+                }
+            })
+            return
+        }
+
+        if (self.cloudHardwareDeviceVersions == null) {
+            $.ajax({
+                method: 'GET',
+                url: CONTROLCHAIN_URL + '/versions',
+                success: function (resp) {
+                    if (!resp) {
+                        console.log("Notice: failed to get latest device version")
+                        return
+                    }
+                    // FIXME: must be v1
+                    if (resp.api_version != 0) {
+                        return
+                    }
+
+                    self.cloudHardwareDeviceVersions = resp
+                    self.checkHardwareDeviceVersion(dev_uri, label, version)
+                },
+                error: function (resp) {
+                    console.log("Notice: failed to get latest device version")
+                },
+                cache: false,
+                dataType: 'json'
+            })
+            return
+        }
+
+        var devs = self.cloudHardwareDeviceVersions.devices
+        if (! devs || Object.keys(devs).length == 0) {
+            return
+        }
+        var dev = devs[dev_uri]
+        if (! dev) {
+            return
+        }
+
+        var majminor = VERSION.split(".").slice(0, 2).join(".")
+        var cloudversion = dev[majminor]
+
+        if (! cloudversion) {
+            cloudversion = dev["latest"]
+            if (! cloudversion) {
+                return
+            }
+        }
+
+        if (compareVersions(version.split("."), cloudversion.split("."), 3) < 0) {
+            data = {
+                'label': label,
+                'download-url': CONTROLCHAIN_URL + "/file/" + label + cloudversion + ".bin",
+                'release-url': "http://wiki.moddevices.com/wiki/ControlChainReleases#" + label + "," + cloudversion
+            }
+            elements.upgradeWindow.upgradeWindow('setupDevice', data)
+        }
+    }
+
     this.validatePlugins = function (uris, callback) {
         $.ajax({
             url: SITEURL + '/pedalboards/validate/',
@@ -497,6 +609,7 @@ function Desktop(elements) {
         }
 
         var finalCallback = function () {
+            self.previousPedalboardList = null
             if (error && !confirm("Failed to install some required plugins, do you want to load the pedalboard anyway?")) {
                 callback(false)
                 return
@@ -548,7 +661,7 @@ function Desktop(elements) {
     },
 
     this.loadRemotePedalboard = function (pedalboard_id) {
-        self.windowManager.closeWindows()
+        self.windowManager.closeWindows(null, true)
 
         if (self.cloudAccessToken == null) {
             self.authenticateDevice(function (ok) {
@@ -686,9 +799,7 @@ function Desktop(elements) {
         })
     })
     elements.pedalboardPresetsEnabler.click(function () {
-        if (!confirm("Pedalboard will be locked now, you cannot add or remove plugins and connections. Continue?")) {
-            return
-        }
+        new Notification('info', 'Pedalboard presets have been activated', 8000)
 
         $.ajax({
             url: '/pedalpreset/enable',
@@ -698,6 +809,7 @@ function Desktop(elements) {
                 $('#js-preset-menu').show()
                 self.titleBox.text((self.title || 'Untitled') + " - Default")
                 self.pedalboardPresetId = 0
+                self.pedalboardModified = true
             },
             error: function () {
                 new Bug("Failed to activate pedalboard presets")
@@ -706,15 +818,18 @@ function Desktop(elements) {
         })
     })
     elements.presetDisableButton.click(function () {
-        if (!confirm("This action will remove all pedalboard presets. Continue?")) {
+        if (!confirm("This action will delete all current pedalboard presets. Continue?")) {
             return
         }
+
+        self.hardwareManager.removeHardwareMappping("/pedalboard/:presets")
 
         $.ajax({
             url: '/pedalpreset/disable',
             method: 'POST',
             success: function () {
                 self.pedalboardPresetId = -1
+                self.pedalboardModified = true
                 self.titleBox.text(self.title || 'Untitled')
                 $('#js-preset-menu').hide()
                 $('#js-preset-enabler').show()
@@ -734,6 +849,7 @@ function Desktop(elements) {
             url: '/pedalpreset/save',
             method: 'POST',
             success: function () {
+                self.pedalboardModified = true
                 new Notification('info', 'Pedalboard preset saved', 2000)
             },
             error: function () {
@@ -744,6 +860,11 @@ function Desktop(elements) {
         })
     })
     elements.presetSaveAsButton.click(function () {
+        var addressed = !!self.hardwareManager.addressingsByPortSymbol['/pedalboard/:presets']
+        if (addressed) {
+            return new Notification("warn", "Cannot change presets while addressed to hardware", 3000)
+        }
+
         desktop.openPresetSaveWindow("", function (newName) {
             $.ajax({
                 url: '/pedalpreset/saveas',
@@ -755,6 +876,7 @@ function Desktop(elements) {
                         return
                     }
                     self.pedalboardPresetId = resp.id
+                    self.pedalboardModified = true
                     self.titleBox.text((self.title || 'Untitled') + " - " + newName)
                     new Notification('info', 'Pedalboard preset saved', 2000)
                 },
@@ -1025,7 +1147,7 @@ function Desktop(elements) {
     })
 
     elements.statusIcon.statusTooltip()
-    new NetworkStatus({
+    this.networkStatus = new NetworkStatus({
         icon: elements.statusIcon,
         notify: function (msg) {
             elements.statusIcon.statusTooltip('message', msg, true)
@@ -1048,6 +1170,9 @@ function Desktop(elements) {
                 cache: false,
                 dataType: 'json',
             })
+        },
+        startDeviceUpgrade: function () {
+            self.ccDeviceManager.showUpdateWindow()
         },
     })
 
@@ -1234,6 +1359,10 @@ Desktop.prototype.makePedalboard = function (el, effectBox) {
 
         getPluginsData: self.getPluginsData,
 
+        showPluginInfo: function (pluginData) {
+            self.effectBox.effectBox('showPluginInfo', pluginData)
+        },
+
         pluginParameterChange: function (port, value) {
             ws.send(sprintf("param_set %s %f", port, value))
         },
@@ -1269,9 +1398,11 @@ Desktop.prototype.makePedalboard = function (el, effectBox) {
         self.pedalboardEmpty = false
         self.pedalboardModified = true
     })
+    /*
     el.bind('dragStart', function () {
-        self.windowManager.closeWindows()
+        self.windowManager.closeWindows(null, true)
     })
+    */
 
     el.bind('pluginDragStart', function () {
         self.effectBox.addClass('fade')
@@ -1300,6 +1431,7 @@ Desktop.prototype.makePedalboardBox = function (el, trigger) {
                 },
                 success: function () {
                     new Notification("info", sprintf('Pedalboard "%s" removed', pedalboard.title), 1000)
+                    self.previousPedalboardList = null
                     callback()
                 },
                 error: function () {
@@ -1357,6 +1489,7 @@ Desktop.prototype.makeCloudPluginBox = function (el, trigger) {
         removePluginBundles: function (bundles, callback) {
             if (!confirm('You are about to remove this plugin and any other in the same bundle. This may break pedalboards that depend on them.'))
                 return
+            self.previousPedalboardList = null
             $.ajax({
                 url: '/package/uninstall',
                 data: JSON.stringify(bundles),
@@ -1376,9 +1509,11 @@ Desktop.prototype.makeCloudPluginBox = function (el, trigger) {
             })
         },
         upgradePluginURI: function (uri, callback) {
+            self.previousPedalboardList = null
             self.installationQueue.installUsingURI(uri, callback)
         },
         installPluginURI: function (uri, callback) {
+            self.previousPedalboardList = null
             self.installationQueue.installUsingURI(uri, callback)
         }
     })
@@ -1538,12 +1673,16 @@ Desktop.prototype.saveCurrentPedalboard = function (asNew, callback) {
                 return
             }
 
+            if (asNew || ! self.title) {
+                self.titleBox.text(title)
+                self.titleBox.removeClass("blend");
+                self.previousPedalboardList = null
+            }
+
             self.title = title
             self.pedalboardBundle = errorOrPath
             self.pedalboardEmpty = false
             self.pedalboardModified = false
-            self.titleBox.text(title)
-            self.titleBox.removeClass("blend");
 
             new Notification("info", sprintf('Pedalboard "%s" saved', title), 2000)
 
@@ -1694,7 +1833,7 @@ JqueryClass('statusTooltip', {
         tooltip.show().stop().animate({
             opacity: 1
         }, 200)
-        if (timeout)
+        if (timeout) {
             setTimeout(function () {
                 tooltip.stop().animate({
                         opacity: 0
@@ -1703,6 +1842,7 @@ JqueryClass('statusTooltip', {
                         $(this).hide()
                     })
             }, timeout)
+        }
     },
 
     updatePosition: function() {
@@ -1719,6 +1859,9 @@ function enable_dev_mode(skipSaveConfig) {
 
     // network and controller ping times
     $('#mod-status').show().statusTooltip('updatePosition')
+
+    // adjust position
+    $('#mod-devices').statusTooltip('updatePosition')
 
     // xrun counter
     $('#mod-xruns').show()
@@ -1742,6 +1885,9 @@ function disable_dev_mode() {
 
     // network and controller ping times
     $('#mod-status').hide()
+
+    // adjust position
+    $('#mod-devices').statusTooltip('updatePosition')
 
     // xrun counter
     $('#mod-xruns').hide()

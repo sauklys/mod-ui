@@ -28,8 +28,10 @@ from mod.hmi import HMI
 from mod.recorder import Recorder, Player
 from mod.screenshot import ScreenshotGenerator
 
-if HOST_CARLA:
-    from mod.host_carla import Host
+if DEV_HOST:
+    from mod.development import FakeHost as Host
+elif HOST_CARLA:
+    from mod.host_carla import CarlaHost as Host
 else:
     from mod.host import Host
 
@@ -59,14 +61,14 @@ class Session(object):
         if not hmiOpened:
             self.hmi = FakeHMI(HMI_SERIAL_PORT, HMI_BAUD_RATE, self.hmi_initialized_cb)
 
-        if DEV_HOST:
-            self.host = FakeHost(self.hmi, self.msg_callback)
-        else:
-            self.host = Host(self.hmi, self.msg_callback)
+        self.host = Host(self.hmi, self.msg_callback)
 
     def signal_save(self):
         # reuse HMI function
         self.host.hmi_save_current_pedalboard(lambda r:None)
+
+    def signal_device_updated(self):
+        self.msg_callback("cc-device-updated")
 
     def signal_disconnect(self):
         sockets = self.websockets

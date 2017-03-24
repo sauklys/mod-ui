@@ -410,6 +410,8 @@ static const char* const kCategoryAnalyserPlugin[] = { "Utility", "Analyser", nu
 static const char* const kCategoryConverterPlugin[] = { "Utility", "Converter", nullptr };
 static const char* const kCategoryFunctionPlugin[] = { "Utility", "Function", nullptr };
 static const char* const kCategoryMixerPlugin[] = { "Utility", "Mixer", nullptr };
+static const char* const kCategoryMIDIPlugin[] = { "MIDI", "Utility", nullptr };
+static const char* const kCategoryMIDIPluginMOD[] = { "MIDI", nullptr };
 
 static const char* const kStabilityExperimental = "experimental";
 static const char* const kStabilityStable = "stable";
@@ -880,6 +882,48 @@ const PluginInfo_Mini& _get_plugin_info_mini(const LilvPlugin* const p, const Na
                     info.category = kCategoryFunctionPlugin;
                 else if (strcmp(cat, "MixerPlugin") == 0)
                     info.category = kCategoryMixerPlugin;
+                /*
+                else if (strcmp(cat, "MIDIPlugin") == 0)
+                    info.category = kCategoryMIDIPlugin;
+                */
+            }
+            else if (const char* cat2 = strstr(nodestr, LILV_NS_MOD))
+            {
+                cat2 += 29; // strlen("http://moddevices.com/ns/mod#")
+
+                if (cat2[0] == '\0')
+                    continue;
+
+                else if (strcmp(cat2, "DelayPlugin") == 0)
+                    info.category = kCategoryDelayPlugin;
+                else if (strcmp(cat2, "DistortionPlugin") == 0)
+                    info.category = kCategoryDistortionPlugin;
+                else if (strcmp(cat2, "DynamicsPlugin") == 0)
+                    info.category = kCategoryDynamicsPlugin;
+                else if (strcmp(cat2, "FilterPlugin") == 0)
+                    info.category = kCategoryFilterPlugin;
+                else if (strcmp(cat2, "GeneratorPlugin") == 0)
+                    info.category = kCategoryGeneratorPlugin;
+                else if (strcmp(cat2, "ModulatorPlugin") == 0)
+                    info.category = kCategoryModulatorPlugin;
+                else if (strcmp(cat2, "ReverbPlugin") == 0)
+                    info.category = kCategoryReverbPlugin;
+                else if (strcmp(cat2, "SimulatorPlugin") == 0)
+                    info.category = kCategorySimulatorPlugin;
+                else if (strcmp(cat2, "SpatialPlugin") == 0)
+                    info.category = kCategorySpatialPlugin;
+                else if (strcmp(cat2, "SpectralPlugin") == 0)
+                    info.category = kCategorySpectralPlugin;
+                else if (strcmp(cat2, "UtilityPlugin") == 0)
+                    info.category = kCategoryUtilityPlugin;
+                else if (strcmp(cat2, "MIDIPlugin") == 0)
+                    info.category = kCategoryMIDIPluginMOD;
+                else
+                    continue; // invalid mod category
+
+                // if we reach this point we found a mod category.
+                // we need to stop now, as only 1 mod category is allowed per plugin.
+                break;
             }
         }
         lilv_nodes_free(nodes);
@@ -2334,12 +2378,7 @@ const PedalboardInfo_Mini& _get_pedalboard_info_mini(const LilvPlugin* const p,
     }
 
     // --------------------------------------------------------------------------------------------------------
-    // uri
-
-    info.uri = strdup(lilv_node_as_uri(lilv_plugin_get_uri(p)));
-
-    // --------------------------------------------------------------------------------------------------------
-    // title
+    // title (required)
 
     if (LilvNode* const node = lilv_plugin_get_name(p))
     {
@@ -2352,8 +2391,13 @@ const PedalboardInfo_Mini& _get_pedalboard_info_mini(const LilvPlugin* const p,
     }
     else
     {
-        info.title = kUntitled;
+        return info;
     }
+
+    // --------------------------------------------------------------------------------------------------------
+    // uri
+
+    info.uri = strdup(lilv_node_as_uri(lilv_plugin_get_uri(p)));
 
     // --------------------------------------------------------------------------------------------------------
     // check if all plugins in the pedalboard exist in our world
@@ -2384,57 +2428,10 @@ const PedalboardInfo_Mini& _get_pedalboard_info_mini(const LilvPlugin* const p,
 
 bool _is_pedalboard_broken(const LilvPlugin* const p,
                            LilvWorld* const w,
-                           const LilvNode* const rdftypenode,
                            const LilvNode* const ingenblocknode,
                            const LilvNode* const lv2protonode)
 {
-    // --------------------------------------------------------------------------------------------------------
-    // check if plugin is pedalboard
-
-    bool isPedalboard = false;
-
-    if (LilvNodes* const nodes = lilv_plugin_get_value(p, rdftypenode))
-    {
-        LILV_FOREACH(nodes, it, nodes)
-        {
-            const LilvNode* const node = lilv_nodes_get(nodes, it);
-
-            if (const char* const nodestr = lilv_node_as_string(node))
-            {
-                if (strcmp(nodestr, LILV_NS_MODPEDAL "Pedalboard") == 0)
-                {
-                    isPedalboard = true;
-                    break;
-                }
-            }
-        }
-
-        lilv_nodes_free(nodes);
-    }
-
-    if (! isPedalboard)
-        return true;
-
-    // --------------------------------------------------------------------------------------------------------
-    // bundle (required)
-
     bool broken = false;
-
-    if (const LilvNode* const node = lilv_plugin_get_bundle_uri(p))
-    {
-        if (lilv_node_as_string(node) == nullptr)
-            broken = true;
-    }
-    else
-    {
-        broken = true;
-    }
-
-    if (broken)
-        return true;
-
-    // --------------------------------------------------------------------------------------------------------
-    // check if all plugins in the pedalboard exist in our world
 
     if (LilvNodes* const blocks = lilv_plugin_get_value(p, ingenblocknode))
     {
@@ -2445,11 +2442,13 @@ bool _is_pedalboard_broken(const LilvPlugin* const p,
             if (LilvNode* const proto = lilv_world_get(w, block, lv2protonode, nullptr))
             {
                 const std::string uri = lilv_node_as_uri(proto);
-
-                if (! broken && PLUGNFO.count(uri) == 0)
-                    broken = true;
-
                 lilv_node_free(proto);
+
+                if (PLUGNFO.count(uri) == 0)
+                {
+                    broken = true;
+                    break;
+                }
             }
         }
 
@@ -3022,24 +3021,37 @@ const char* const* add_bundle_to_lilv_world(const char* const bundle)
     // fill in for any new plugins that appeared
     std::vector<std::string> addedPlugins;
 
-    LILV_FOREACH(plugins, itpls, PLUGINS)
+    // check plugins provided by this bundle
+    if (LilvWorld* const w = lilv_world_new())
     {
-        const LilvPlugin* const p = lilv_plugins_get(PLUGINS, itpls);
+#ifdef HAVE_NEW_LILV
+        lilv_world_load_specifications(w);
+        lilv_world_load_plugin_classes(w);
+#endif
 
-        std::string uri = lilv_node_as_uri(lilv_plugin_get_uri(p));
+        LilvNode* const b = lilv_new_file_uri(w, nullptr, cbundlepath);
+        lilv_world_load_bundle(w, b);
+        lilv_node_free(b);
 
-        if (std::find(BLACKLIST.begin(), BLACKLIST.end(), uri) != BLACKLIST.end())
-            continue;
+        const LilvPlugins* const plugins = lilv_world_get_all_plugins(w);
 
-        // check if it's already cached
-        if (PLUGNFO_Mini.count(uri) > 0)
-            continue;
+        LILV_FOREACH(plugins, itpls, plugins)
+        {
+            const LilvPlugin* const p = lilv_plugins_get(plugins, itpls);
 
-        // store new empty data
-        PLUGNFO[uri] = PluginInfo_Init;
-        PLUGNFO_Mini[uri] = PluginInfo_Mini_Init;
+            const std::string uri = lilv_node_as_uri(lilv_plugin_get_uri(p));
 
-        addedPlugins.push_back(uri);
+            if (std::find(BLACKLIST.begin(), BLACKLIST.end(), uri) != BLACKLIST.end())
+                continue;
+
+            // store new empty data
+            PLUGNFO[uri] = PluginInfo_Init;
+            PLUGNFO_Mini[uri] = PluginInfo_Mini_Init;
+
+            addedPlugins.push_back(uri);
+        }
+
+        lilv_world_free(w);
     }
 
     if (size_t plugCount = addedPlugins.size())
@@ -3112,7 +3124,7 @@ const char* const* remove_bundle_from_lilv_world(const char* const bundle)
 
         const LilvNodes* const bundles = lilv_plugin_get_data_uris(p);
 
-        std::string uri = lilv_node_as_uri(lilv_plugin_get_uri(p));
+        const std::string uri = lilv_node_as_uri(lilv_plugin_get_uri(p));
 
         if (PLUGNFO.count(uri) == 0)
             continue;
@@ -3305,7 +3317,7 @@ const PluginInfo_Mini* const* get_all_plugins(void)
 
         const LilvPlugin* const p = lilv_plugins_get(PLUGINS, itpls);
 
-        std::string uri = lilv_node_as_uri(lilv_plugin_get_uri(p));
+        const std::string uri = lilv_node_as_uri(lilv_plugin_get_uri(p));
 
         if (std::find(BLACKLIST.begin(), BLACKLIST.end(), uri) != BLACKLIST.end())
             continue;
@@ -3566,7 +3578,6 @@ const char* const* get_broken_pedalboards(void)
     else
         unsetenv("LV2_PATH");
 
-    LilvNode* const rdftypenode = lilv_new_uri(w, LILV_NS_RDF "type");
     LilvNode* const ingenblocknode = lilv_new_uri(w, LILV_NS_INGEN "block");
     LilvNode* const lv2protonode = lilv_new_uri(w, LILV_NS_LV2 "prototype");
     const LilvPlugins* const plugins = lilv_world_get_all_plugins(w);
@@ -3576,14 +3587,13 @@ const char* const* get_broken_pedalboards(void)
         const LilvPlugin* const p = lilv_plugins_get(plugins, itpls);
 
         // get new info
-        if (_is_pedalboard_broken(p, w, rdftypenode, ingenblocknode, lv2protonode))
+        if (_is_pedalboard_broken(p, w, ingenblocknode, lv2protonode))
         {
             const std::string pedalboard(lilv_node_as_uri(lilv_plugin_get_uri(p)));
             brokenpedals.push_back(pedalboard);
         }
     }
 
-    lilv_free(rdftypenode);
     lilv_free(ingenblocknode);
     lilv_free(lv2protonode);
     lilv_world_free(w);
@@ -3778,7 +3788,7 @@ const PedalboardInfo* get_pedalboard_info(const char* const bundle)
                     LilvNode* const y       = lilv_world_get(w, block, ingen_canvasY, nullptr);
                     LilvNode* const preset  = lilv_world_get(w, block, modpedal_preset, nullptr);
 
-                    PedalboardMidiControl bypassCC = { -1, -1, false, 0.0f, 1.0f };
+                    PedalboardMidiControl bypassCC = { -1, 0, false, 0.0f, 1.0f };
                     PedalboardPluginPort* ports = nullptr;
 
                     if (LilvNodes* const portnodes = lilv_world_find_nodes(w, block, lv2_port, nullptr))
@@ -3800,7 +3810,8 @@ const PedalboardInfo* get_pedalboard_info(const char* const bundle)
                               if (portvalue == nullptr)
                                   continue;
 
-                              int8_t mchan = -1, mctrl = -1;
+                              int8_t mchan = -1;
+                              uint8_t mctrl = 0;
                               float minimum = 0.0f, maximum = 1.0f;
                               bool hasRanges = false;
 
@@ -3814,10 +3825,10 @@ const PedalboardInfo* get_pedalboard_info(const char* const bundle)
                                       const int mchantest = lilv_node_as_int(bindChan);
                                       const int mctrltest = lilv_node_as_int(bindCtrl);
 
-                                      if (mchantest >= 0 && mchantest < 16 && mctrltest >= 0 && mctrltest < 128)
+                                      if (mchantest >= 0 && mchantest < 16 && mctrltest >= 0 && mctrltest < 255)
                                       {
                                           mchan = (int8_t)mchantest;
-                                          mctrl = (int8_t)mctrltest;
+                                          mctrl = (uint8_t)mctrltest;
 
                                           LilvNode* const bindMin = lilv_world_get(w, bind, lv2_minimum, nullptr);
                                           LilvNode* const bindMax = lilv_world_get(w, bind, lv2_maximum, nullptr);

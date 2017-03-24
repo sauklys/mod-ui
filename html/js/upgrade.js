@@ -25,11 +25,13 @@ JqueryClass('upgradeWindow', {
             startUpgrade: function (callback) {
                 callback(true)
             },
+            startDeviceUpgrade: function () {},
         }, options)
 
         self.data(options)
         self.data('updatedata', null)
         self.data('updaterequired', false)
+        self.data('updatesystem', false)
 
         options.icon.statusTooltip()
         options.icon.statusTooltip('message', 'Checking for updates...', true)
@@ -52,7 +54,11 @@ JqueryClass('upgradeWindow', {
                 return
             }
             if ($(this).text() == "Upgrade Now") {
-                self.upgradeWindow('startUpgrade')
+                if (self.data('updatesystem')) {
+                    self.upgradeWindow('startUpgrade')
+                } else {
+                    self.upgradeWindow('startDeviceUpgrade')
+                }
             } else {
                 self.upgradeWindow('downloadStart')
             }
@@ -71,18 +77,25 @@ JqueryClass('upgradeWindow', {
             return
         }
 
-        var html = "Update version <b>" + data['version'].replace("v","") + "</b>.<br/>" +
+        var html
+
+        if (self.data('updatesystem')) {
+            html = "Update version <b>" + data['version'].replace("v","") + "</b>.<br/>" +
                    "Released on " + data['release-date'].split('T')[0] + ".";
 
-        if (window.location.host == "192.168.50.1") {
-            html += "<br/><br/>" +
-                    "Sorry, cannot update via bluetooth.<br/>" +
-                    "Please connect the MOD via USB and try again.";
-            self.find('button.js-upgrade').addClass('disabled')
+            if (window.location.host == "192.168.50.1") {
+                html += "<br/><br/>" +
+                        "Sorry, cannot update via bluetooth.<br/>" +
+                        "Please connect the MOD via USB and try again.";
+                self.find('button.js-upgrade').addClass('disabled')
 
-        } else if (self.data('updaterequired')) {
-            html += "<br/><br/>" +
-                    "<b>This update is required!</b>";
+            } else if (self.data('updaterequired')) {
+                html += "<br/><br/>" +
+                        "<b>This update is required!</b>";
+            }
+        } else {
+            html = "One of your connected Control Chain devices is using outdated firmware, please update.<br/>"
+                   "Just follow the instructions on <a href='#' target='_blank'>this link</a>.";
         }
 
         var p = self.find('.mod-upgrade-details').find('p')
@@ -94,9 +107,15 @@ JqueryClass('upgradeWindow', {
     },
 
     close: function () {
-        $(this).hide()
+        var self = $(this)
 
-        setCookie("auto-updated-canceled_" + VERSION, "true", 15)
+        self.hide()
+
+        if (self.data('updatesystem')) {
+            setCookie("auto-updated-canceled_" + VERSION, "true", 15)
+        } else {
+            setCookie("device-update-canceled_" + VERSION, "true", 15)
+        }
     },
 
     setup: function (required, data) {
@@ -106,14 +125,32 @@ JqueryClass('upgradeWindow', {
         var ignoreUpdate = (getCookie("auto-updated-canceled_" + VERSION, "false") == "true")
 
         self.data('updatedata', data)
-        self.data('updaterequired', required)
-        icon.statusTooltip('message', "An update is available, click to know details", ignoreUpdate || required, 8000)
+        self.data('updaterequired', false)
+        self.data('updatesystem', true)
+        icon.statusTooltip('message', "An update is available, click to learn more", ignoreUpdate || required, 8000)
         icon.statusTooltip('status', 'update-available')
 
         if (required && ! ignoreUpdate) {
             self.upgradeWindow('open')
             new Notification('warn', 'A required update is available.<br/>Please update.', 8000)
         }
+    },
+
+    setupDevice: function (data) {
+        var self = $(this)
+
+        if (self.data('updatesystem')) {
+            return
+        }
+
+        var icon = self.data('icon')
+        var ignoreUpdate = (getCookie("device-update-canceled_" + VERSION, "false") == "true")
+
+        self.data('updatedata', data)
+        self.data('updaterequired', false)
+        self.data('updatesystem', false)
+        icon.statusTooltip('message', "A device update is available, click to know details", ignoreUpdate, 8000)
+        icon.statusTooltip('status', 'update-available')
     },
 
     setErrored: function () {
@@ -126,8 +163,9 @@ JqueryClass('upgradeWindow', {
 
     setUpdated: function () {
         var self = $(this)
-        var icon = self.data('icon')
+        self.data('updatedata', null)
 
+        var icon = self.data('icon')
         icon.statusTooltip('message', "System is up-to-date", true)
         icon.statusTooltip('status', 'uptodate')
 
@@ -151,7 +189,8 @@ JqueryClass('upgradeWindow', {
         self.find('.download-start').show().text("Downloading...")
         self.find('.download-complete').hide()
 
-        var transfer = new SimpleTransference(self.data('updatedata')['download-url'], '/update/download')
+        var transfer = new SimpleTransference(self.data('updatedata')['download-url'],
+                                              self.data('updatesystem') ? '/update/download' : '/controlchain/download')
 
         transfer.reportPercentageStatus = function (percentage) {
             self.find('.progressbar').width(self.find('.progressbar-wrapper').width() * percentage)
@@ -169,10 +208,15 @@ JqueryClass('upgradeWindow', {
             self.find('.download-start').hide()
             self.find('.download-complete').show()
 
-            if (!confirm("The MOD will now be updated. Any unsaved work will be lost. The upgrade can take several minutes, in which you may not be able to play or do anything else. Continue?"))
-                return
-
-            self.upgradeWindow('startUpgrade')
+            if (self.data('updatesystem')) {
+                if (confirm("The MOD will now be updated. Any unsaved work will be lost. "+
+                            "The upgrade can take several minutes, "+
+                            "in which you may not be able to play or do anything else. Continue?")) {
+                    self.upgradeWindow('startUpgrade')
+                }
+            } else {
+                self.upgradeWindow('startDeviceUpgrade')
+            }
         }
 
         transfer.reportError = function (error) {
@@ -196,5 +240,10 @@ JqueryClass('upgradeWindow', {
                 new Bug("Failed to start upgrade")
             }
         })
+    },
+
+    startDeviceUpgrade: function () {
+        var self = $(this)
+        self.data('startDeviceUpgrade')()
     },
 })
